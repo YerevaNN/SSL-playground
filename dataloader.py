@@ -10,7 +10,6 @@ from cifar.datasets import get_train_test_datasets as get_cifar_train_test_datas
 from helpers import autoaugment
 from helpers.transforms import RandomErasing
 
-
 def set_seed(seed):
     import random
     import numpy as np
@@ -24,17 +23,16 @@ def set_seed(seed):
 def get_train_test_loaders(train_ds, test_ds, num_classes, num_labelled_samples, batch_size, num_workers,
                            unlabelled_batch_size=None, pin_memory=True):
 
-
     n_valid = 0.2
     # if "cifar" in dataset_name.lower():
     #     train_ds, test_ds, num_classes = get_cifar_train_test_datasets(dataset_name, path)
     # else:
     #     raise RuntimeError("Unknown dataset '{}'".format(dataset_name))
 
-
     train_labelled_ds, train_unlabelled_ds = stratified_train_labelled_unlabelled_split(train_ds,
                                                    num_labelled_samples=num_labelled_samples,
                                                    num_classes=num_classes, seed=12)
+
 
     # if "cifar" in dataset_name.lower():
     train_transform = Compose([
@@ -74,15 +72,15 @@ def get_train_test_loaders(train_ds, test_ds, num_classes, num_labelled_samples,
     if unlabelled_batch_size is None:
         unlabelled_batch_size = batch_size
 
-    train_labelled_loader = DataLoader(CombineDataset(train_labelled_ds, train_unlabelled_ds),
-                                       batch_size=unlabelled_batch_size, num_workers=num_workers,
+    train_labelled_loader = DataLoader(train_labelled_ds, batch_size=batch_size, num_workers=num_workers,
                                        pin_memory=pin_memory)
-    # train_unlabelled_loader = DataLoader(train_unlabelled_ds, batch_size=unlabelled_batch_size, num_workers=num_workers,
-    #                                      pin_memory=pin_memory)
+
+    train_unlabelled_loader = DataLoader(train_unlabelled_ds, batch_size=unlabelled_batch_size, num_workers=num_workers,
+                                         pin_memory=pin_memory)
 
     test_loader = DataLoader(test_ds, batch_size=batch_size * 2, num_workers=num_workers, pin_memory=pin_memory)
 
-    return train_labelled_loader, test_loader
+    return train_labelled_loader, train_unlabelled_loader, test_loader
 
 class TransformedDataset(Dataset):
 
@@ -115,7 +113,6 @@ class UDATransform:
         tdp1 = self.original_transform(dp)
         tdp2 = self.augmentation_transform(aug_dp)
         return tdp1, tdp2
-
 
 def stratified_train_labelled_unlabelled_split(ds, num_labelled_samples, num_classes, seed=None):
     labelled_indices = []
