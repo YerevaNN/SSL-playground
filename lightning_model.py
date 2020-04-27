@@ -460,7 +460,6 @@ class UDA(pl.LightningModule):
 
     def training_step(self, batch_list, batch_inx):
 
-        # if len(batch_list) > 1:
         sup_batch, unsup_batch = batch_list
 
         x, y = sup_batch
@@ -482,17 +481,6 @@ class UDA(pl.LightningModule):
         unsup_loss = self.lam * hsic.HSIC(z, c)
 
         self.loss = sup_loss + unsup_loss
-
-        # else:
-        #     unsup_batch = batch_list[0]
-        #
-        #     unlabeled, augmented = unsup_batch
-        #     augment_pred = self.forward(augmented)
-        #     with torch.no_grad():
-        #         unlab_pred = self.forward(unlabeled)
-        #     unsup_loss = self.lam * self.consistency_loss(augment_pred, unlab_pred)
-        #
-        #     self.loss = unsup_loss
 
         log_dict = {
             'train_sup_acc': self.compute_accuracy(y, y_hat),
