@@ -460,7 +460,6 @@ class UDA(pl.LightningModule):
 
     def training_step(self, batch_list, batch_inx):
 
-        # if len(batch_list) > 1:
         sup_batch, unsup_batch = batch_list
 
         x, y = sup_batch
@@ -476,30 +475,17 @@ class UDA(pl.LightningModule):
         with torch.no_grad():
             unlab_pred = self.forward(unlab_x)
 
-        z = torch.cat((unlab_pred, augment_pred))
-        c = torch.cat((torch.zeros_like(aug_vec), aug_vec)).type(dtype=torch.cuda.FloatTensor)
-
-        unsup_loss = self.lam * hsic.HSIC(z, c)
+        unsup_loss = self.lam * self.consistency_loss(augment_pred, unlab_pred)
 
         self.loss = sup_loss + unsup_loss
 
-        # else:
-        #     unsup_batch = batch_list[0]
-        #
-        #     unlabeled, augmented = unsup_batch
-        #     augment_pred = self.forward(augmented)
-        #     with torch.no_grad():
-        #         unlab_pred = self.forward(unlabeled)
-        #     unsup_loss = self.lam * self.consistency_loss(augment_pred, unlab_pred)
-        #
-        #     self.loss = unsup_loss
 
         log_dict = {
             'train_sup_acc': self.compute_accuracy(y, y_hat),
             'train_unsup_acc': self.compute_accuracy(torch.argmax(unlab_pred, dim=-1), augment_pred),
             'train_unsup_logits_acc': self.compute_accuracy(unlab_y, unlab_pred),
             'training_sup_loss': sup_loss,
-            'hsic': unsup_loss,
+            'training_unsup_loss': unsup_loss,
             'training_loss': self.loss,
         }
 
