@@ -1,0 +1,6 @@
+__pycache__/
+.idea/
+logs/
+checkpoints/
+.ipynb_checkpoints/
+cifar-10-batches-py/

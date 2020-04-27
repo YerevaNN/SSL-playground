@@ -6,7 +6,6 @@ import os
 import numpy as np
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.functional import cross_entropy, mse_loss, kl_div
 import torch.optim as optim
@@ -16,10 +15,14 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.trainer import data_loading, training_loop
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DistributedSampler
+from pytorch_lightning.logging import TestTubeLogger
 
 from dataloader import get_train_test_loaders
 from helpers.tsa import TrainingSignalAnnealing
+from nets.wideresnet import Wide_ResNet
+from nets.fastresnet import FastResnet
 import cifar.datasets
+import hsic
 
 class LoadData(data_loading.TrainerDataLoadingMixin):
     def init_train_dataloader(self, model):
@@ -33,26 +36,19 @@ class LoadData(data_loading.TrainerDataLoadingMixin):
             self._percent_range_check('train_percent_check')
 
             self.num_training_batches = sum(len(dataloader) for dataloader in self.get_train_dataloaders())
-            self.min_num_of_training_batches = self.num_training_batches
-
-            for dataloader in self.get_train_dataloaders():
-                if self.min_num_of_training_batches > len(dataloader):
-                    self.min_num_of_training_batches = len(dataloader)
-
             self.num_training_batches = int(self.num_training_batches * self.train_percent_check)
-
 
         if isinstance(self.val_check_interval, int):
             self.val_check_batch = self.val_check_interval
-            if self.val_check_batch > self.min_num_of_training_batches:
+            if self.val_check_batch > self.num_training_batches:
                 raise ValueError(
                     f"`val_check_interval` ({self._check_interval}) must be less than or equal "
-                    f"to the number of the training batches ({self.min_num_of_training_batches}). "
+                    f"to the number of the training batches ({self.num_training_batches}). "
                     f"If you want to disable validation set `val_percent_check` to 0.0 instead.")
         else:
             self._percent_range_check('val_check_interval')
 
-            self.val_check_batch = int(self.min_num_of_training_batches * self.val_check_interval)
+            self.val_check_batch = int(self.num_training_batches * self.val_check_interval)
             self.val_check_batch = max(1, self.val_check_batch)
 
         on_ddp = self.use_ddp or self.use_ddp2
@@ -124,7 +120,7 @@ class TrainingLoop(training_loop.TrainerTrainLoopMixin):
         self.get_train_dataloaders = None
         self.reduce_lr_on_plateau_scheduler = None
 
-    def run_training_batch(self, batch, batch_idx, dataloader_idx):
+    def run_training_batch(self, batch, batch_idx):
         # track grad norms
         grad_norm_dic = {}
 
@@ -169,7 +165,7 @@ class TrainingLoop(training_loop.TrainerTrainLoopMixin):
                 def optimizer_closure():
                     # forward pass
                     output = self.training_forward(
-                        split_batch, batch_idx, dataloader_idx, opt_idx, self.hiddens)
+                        split_batch, batch_idx, opt_idx, self.hiddens)
 
                     closure_loss = output[0]
                     progress_bar_metrics = output[1]
@@ -250,7 +246,7 @@ class TrainingLoop(training_loop.TrainerTrainLoopMixin):
 
         return 0, grad_norm_dic, all_log_metrics
 
-    def training_forward(self, batch, batch_idx, dataloader_idx, opt_idx, hiddens):
+    def training_forward(self, batch, batch_idx, opt_idx, hiddens):
         """
         Handle forward for each training case (distributed, single gpu, etc...)
         :param batch:
@@ -261,7 +257,7 @@ class TrainingLoop(training_loop.TrainerTrainLoopMixin):
         # FORWARD
         # ---------------
         # enable not needing to add opt_idx to training_step
-        args = [batch, batch_idx, dataloader_idx]
+        args = [batch, batch_idx]
 
         if len(self.optimizers) > 1:
             if self.has_arg('training_step', 'optimizer_idx'):
@@ -309,78 +305,63 @@ class TrainingLoop(training_loop.TrainerTrainLoopMixin):
             model = self.get_model()
             model.on_epoch_start()
 
-        dataloaders = self.get_train_dataloaders();
-        max_batches = self.num_training_batches;
-
         # run epoch
-        for dataloader_idx, dataloader in enumerate(dataloaders):
-            dl_outputs = []
-            for batch_idx, batch in enumerate(dataloader):
-                if batch is None:  # pragma: no cover
-                    continue
+        dataloaders_zip = zip(self.get_train_dataloaders()[0], self.get_train_dataloaders()[1])
+        for batch_idx, (batch_labeled, batch_unlabeled) in enumerate(dataloaders_zip):
+            if batch_idx >= self.num_training_batches:
+                break
 
-                # stop short when on fast_dev_run (sets max_batch=1)
-                if batch_idx >= max_batches:
-                    break
+            self.batch_idx = batch_idx
 
-        # for batch_idx, batch in enumerate(self.get_train_dataloaders()):
-        #     # stop epoch if we limited the number of training batches
-        #     # stop epoch if we limited the number of training batches
-        #     if batch_idx >= self.num_training_batches:
-        #         break
-
-                self.batch_idx = batch_idx
-
-                model = self.get_model()
-                model.global_step = self.global_step
+            model = self.get_model()
+            model.global_step = self.global_step
 
             # ---------------
             # RUN TRAIN STEP
             # ---------------
-                output = self.run_training_batch(batch, batch_idx, dataloader_idx)
-                dl_outputs.append(output)
-                batch_result, grad_norm_dic, batch_step_metrics = output
+            output = self.run_training_batch((batch_labeled, batch_unlabeled), batch_idx)
+            batch_result, grad_norm_dic, batch_step_metrics = output
 
             # when returning -1 from train_step, we end epoch early
-                early_stop_epoch = batch_result == -1
+            early_stop_epoch = batch_result == -1
 
             # ---------------
             # RUN VAL STEP
             # ---------------
-                is_val_check_batch = (batch_idx + 1) % self.val_check_batch == 0
-                can_check_epoch = (self.current_epoch + 1) % self.check_val_every_n_epoch == 0
-                should_check_val = (not self.disable_validation and can_check_epoch and
-                                    (is_val_check_batch or early_stop_epoch))
+            is_val_check_batch = (batch_idx + 1) % self.val_check_batch == 0
+            can_check_epoch = (self.current_epoch + 1) % self.check_val_every_n_epoch == 0
+            should_check_val = (not self.disable_validation and can_check_epoch and
+                                (is_val_check_batch or early_stop_epoch))
 
             # fast_dev_run always forces val checking after train batch
-                if self.fast_dev_run or should_check_val:
-                    self.run_evaluation(test=self.testing)
+            if self.fast_dev_run or should_check_val:
+                self.run_evaluation(test=self.testing)
 
             # when logs should be saved
-                should_save_log = (batch_idx + 1) % self.log_save_interval == 0 or early_stop_epoch
-                if should_save_log or self.fast_dev_run:
-                    if self.proc_rank == 0 and self.logger is not None:
-                        self.logger.save()
+            should_save_log = (batch_idx + 1) % self.log_save_interval == 0 or early_stop_epoch
+            if should_save_log or self.fast_dev_run:
+                if self.proc_rank == 0 and self.logger is not None:
+                    self.logger.save()
 
             # when metrics should be logged
-                should_log_metrics = batch_idx % self.row_log_interval == 0 or early_stop_epoch
-                if should_log_metrics or self.fast_dev_run:
-                    # logs user requested information to logger
-                    self.log_metrics(batch_step_metrics, grad_norm_dic)
+            should_log_metrics = batch_idx % self.row_log_interval == 0 or early_stop_epoch
+            if should_log_metrics or self.fast_dev_run:
+                # logs user requested information to logger
+                self.log_metrics(batch_step_metrics, grad_norm_dic)
 
-                self.global_step += 1
-                self.total_batch_idx += 1
+            self.global_step += 1
+            self.total_batch_idx += 1
 
-                # end epoch early
-                # stop when the flag is changed or we've gone past the amount
-                # requested in the batches
-                if early_stop_epoch or self.fast_dev_run:
-                    break
+            # end epoch early
+            # stop when the flag is changed or we've gone past the amount
+            # requested in the batches
+            if early_stop_epoch or self.fast_dev_run:
+                break
 
-            # epoch end hook
-            if self.is_function_implemented('on_epoch_end'):
-                model = self.get_model()
-                model.on_epoch_end()
+        # epoch end hook
+        if self.is_function_implemented('on_epoch_end'):
+            model = self.get_model()
+            model.on_epoch_end()
 
 class UdaTrainer(Trainer, LoadData, TrainingLoop):
 
@@ -404,7 +385,7 @@ class UdaTrainer(Trainer, LoadData, TrainingLoop):
             self.get_val_dataloaders()
 
 class UDA(pl.LightningModule):
-    def __init__(self, hparams:Namespace, train_dataset, test_dataset, number_of_classes) -> None:
+    def __init__(self, hparams:Namespace) -> None:
         super().__init__()
 
         self.hparams = hparams
@@ -419,6 +400,34 @@ class UDA(pl.LightningModule):
         self.momentum = hparams['momentum']
         self.weight_decay = hparams['weight_decay']
         self.consistency_criterion = hparams['consistency_criterion']
+        
+        self.save_dir_name = os.getcwd() + "/checkpoints/{}_{}/version_{}".format(hparams['experiment_name'], hparams['model'],\
+                             hparams['version_name'])
+
+        #LENET
+
+        # self.conv1 = nn.Conv2d(3, 16, 3, padding=1)
+        # self.conv2 = nn.Conv2d(16, 32, 3, padding=1)
+        # self.conv3 = nn.Conv2d(32, 64, 3, padding=1)
+        #
+        # self.pool = nn.MaxPool2d(2, 2)
+        #
+        # self.fc1 = nn.Linear(64 * 4 * 4, 500)
+        #
+        # self.fc2 = nn.Linear(500, 10)
+        #
+        # self.dropout = nn.Dropout(0.25)
+
+        #WIDERESNET
+
+        #self.net = Wide_ResNet(28, 10, 0.3, 10)
+
+        #FASTRESNET
+
+        self.net = FastResnet(bn_kwargs={"bn_weight_init": 1.0})
+    
+    def set_datasets(self, train_dataset, test_dataset, number_of_classes):
+        hparams = self.hparams.__dict__
         self.train_labeled_loader, self.train_unlabeled_loader, self.valid_loader = get_train_test_loaders(train_dataset,
                                                                                                            test_dataset,
                                                                       number_of_classes,
@@ -430,59 +439,71 @@ class UDA(pl.LightningModule):
                                   min_threshold=hparams['TSA_proba_min'],
                                   max_threshold=hparams['TSA_proba_max'])
 
-        self.save_dir_name = os.getcwd() + "/checkpoints/{}/version_{}".format(hparams['experiment_name'], hparams['version_name'])
 
-        self.conv1 = nn.Conv2d(3, 16, 3, padding=1)
-        self.conv2 = nn.Conv2d(16, 32, 3, padding=1)
-        self.conv3 = nn.Conv2d(32, 64, 3, padding=1)
-
-        self.pool = nn.MaxPool2d(2, 2)
-
-        self.fc1 = nn.Linear(64 * 4 * 4, 500)
-
-        self.fc2 = nn.Linear(500, 10)
-
-        self.dropout = nn.Dropout(0.25)
 
     def forward(self, x):
-        x = self.pool(F.elu(self.conv1(x)))
-        x = self.pool(F.elu(self.conv2(x)))
-        x = self.pool(F.elu(self.conv3(x)))
-
-        x = x.view(-1, 64 * 4 * 4)
-        x = self.dropout(x)
-        x = F.elu(self.fc1(x))
-        x = self.dropout(x)
-        x = self.fc2(x)
+        # x = self.pool(F.elu(self.conv1(x)))
+        # x = self.pool(F.elu(self.conv2(x)))
+        # x = self.pool(F.elu(self.conv3(x)))
+        #
+        # x = x.view(-1, 64 * 4 * 4)
+        # x = self.dropout(x)
+        # x = F.elu(self.fc1(x))
+        # x = self.dropout(x)
+        # x = self.fc2(x)
+        x = self.net.forward(x)
         return x
 
     @pl.data_loader
     def train_dataloader(self):
         return [self.train_labeled_loader, self.train_unlabeled_loader]
 
-    def training_step(self, batch, batch_inx, dataset_idx):
-        labeled_loss = 0
-        unlabeled_loss = 0
-        if dataset_idx == 0:
-            x, y = batch
-            y_hat = self.forward(x)
-            #tsa_y_hat, tsa_y = self.tsa(y_hat, y, batch_inx)
-            labeled_loss = self.classification_loss(y_hat, y)
+    def training_step(self, batch_list, batch_inx):
 
-        else:
-            if (dataset_idx == 1):
-                unlabeled, augmented = batch
-                with torch.no_grad():
-                    unlab_pred = self.forward(unlabeled)
-                augment_pred = self.forward(augmented)
-            unlabeled_loss = self.lam * self.consistency_loss(unlab_pred, augment_pred)
+        # if len(batch_list) > 1:
+        sup_batch, unsup_batch = batch_list
 
-        loss = labeled_loss + unlabeled_loss
+        x, y = sup_batch
+        y_hat = self.forward(x)
+        sup_loss = self.classification_loss(y_hat, y)
+
+        unlabeled, augmented = unsup_batch
+
+        unlab_x, unlab_y = unlabeled
+        aug_x, aug_vec = augmented
+
+        augment_pred = self.forward(aug_x)
+        with torch.no_grad():
+            unlab_pred = self.forward(unlab_x)
+
+        z = torch.cat((unlab_pred, augment_pred))
+        c = torch.cat((torch.zeros_like(aug_vec), aug_vec)).type(dtype=torch.cuda.FloatTensor)
+
+        unsup_loss = self.lam * hsic.HSIC(z, c)
+
+        self.loss = sup_loss + unsup_loss
+
+        # else:
+        #     unsup_batch = batch_list[0]
+        #
+        #     unlabeled, augmented = unsup_batch
+        #     augment_pred = self.forward(augmented)
+        #     with torch.no_grad():
+        #         unlab_pred = self.forward(unlabeled)
+        #     unsup_loss = self.lam * self.consistency_loss(augment_pred, unlab_pred)
+        #
+        #     self.loss = unsup_loss
+
         log_dict = {
-            'training_loss': loss,
+            'train_sup_acc': self.compute_accuracy(y, y_hat),
+            'train_unsup_acc': self.compute_accuracy(torch.argmax(unlab_pred, dim=-1), augment_pred),
+            'train_unsup_logits_acc': self.compute_accuracy(unlab_y, unlab_pred),
+            'training_sup_loss': sup_loss,
+            'hsic': unsup_loss,
+            'training_loss': self.loss,
         }
 
-        return {'loss': loss, 'log': log_dict}
+        return {'loss': self.loss, 'log': log_dict}
 
     @pl.data_loader
     def val_dataloader(self):
@@ -491,14 +512,13 @@ class UDA(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self.forward(x)
-        print("VALIDATION STEP")
-        print('accuracy', self.compute_accuracy(y, y_hat), 'loss', F.cross_entropy(y_hat, y))
-        return {'valid_loss': F.cross_entropy(y_hat, y),
-                'acc': self.compute_accuracy(y, y_hat)}
+        return {'val_loss': F.cross_entropy(y_hat, y),
+                'val_acc': self.compute_accuracy(y, y_hat)}
 
     def validation_end(self, outputs):
-        avg_loss = torch.stack([x['valid_loss'] for x in outputs]).mean()
-        tensorboard_logs = {'valid_loss': avg_loss}
+        avg_loss = torch.stack([x['val_loss'] for x in outputs]).mean()
+        val_acc = np.array([x['val_acc'] for x in outputs]).mean()
+        tensorboard_logs = {'val_loss': avg_loss, 'val_acc': val_acc}
         return {'avg_valid_loss': avg_loss, 'log': tensorboard_logs}
 
     def compute_accuracy(self, y, y_hat):
@@ -524,7 +544,7 @@ class UDA(pl.LightningModule):
         unsup_aug_y_probas = torch.log_softmax(unsup_aug_y_probas, dim=-1)
         unsup_orig_y_probas = torch.softmax(unsup_orig_y_probas, dim=-1)
         if self.consistency_criterion == "MSE":
-            return mse_loss(unsup_aug_y_probas), torch.softmax(unsup_orig_y_probas)
+            return mse_loss(unsup_aug_y_probas, unsup_orig_y_probas)
         elif self.consistency_criterion == "KL":
             return kl_div(unsup_aug_y_probas, unsup_orig_y_probas, reduction='batchmean')
 
@@ -534,12 +554,20 @@ class UDA(pl.LightningModule):
             filepath=self.save_dir_name,
             verbose=True,
             save_top_k=-1,
-            period=1
+            period=20
         )
-        trainer = UdaTrainer(gpus=None, early_stop_callback=None, show_progress_bar=True,
-                          checkpoint_callback=None, check_val_every_n_epoch=1,
-                          default_save_path="./checkpoints", max_epochs=hparams['num_epochs'], log_save_interval=1,
-                          row_log_interval=1)
+
+        tt_logger = TestTubeLogger(
+            save_dir="logs",
+            name="{}_{}".format(hparams['experiment_name'], hparams['model']),
+            version=hparams['version_name'],
+            debug=False,
+            create_git_tag=False,
+        )
+
+        trainer = UdaTrainer(gpus=-1, early_stop_callback=None, logger=tt_logger, show_progress_bar=True,
+                          checkpoint_callback=checkpoint_callback, check_val_every_n_epoch=1, default_save_path="./checkpoints",
+                          val_check_interval=30, max_epochs=hparams['num_epochs'], log_save_interval=1, row_log_interval=1)
 
         trainer.fit(self)
 
@@ -555,10 +583,11 @@ if __name__ == "__main__":
         hparams= json.load(f)
 
     train_ds, valid_ds, num_classes = cifar.datasets.get_train_test_datasets(hparams['dataset'], hparams['data_path'])
-    model = UDA(Namespace(**hparams), train_ds, valid_ds, num_classes)
+    model = UDA(Namespace(**hparams))
+    model.set_datasets(train_ds, valid_ds, num_classes)
 
     model.fit_model()
-    #model.load()
+    # model.load()
     # # out = model(test_dataset=valid_ds)
     # # print(out)
 

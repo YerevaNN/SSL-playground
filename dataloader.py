@@ -52,21 +52,22 @@ def get_train_test_loaders(train_ds, test_ds, num_classes, num_labelled_samples,
     unsupervised_train_transformation = Compose([
         Pad(4),
         RandomCrop(32, fill=128),
-        autoaugment.CIFAR10Policy(),
+        autoaugment.CIFAR10Policy()
+    ])
+    unsup_train_transformation =Compose([
         ToTensor(),
         Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
         RandomErasing(scale=(0.1, 0.33)),
     ])
-
     train_labelled_ds = TransformedDataset(train_labelled_ds,
                                            transform_fn=lambda dp: (train_transform(dp[0]), dp[1]))
     test_ds = TransformedDataset(test_ds, transform_fn=lambda dp: (test_transform(dp[0]), dp[1]))
 
-
     original_transform = lambda dp: train_transform(dp[0])
     augmentation_transform = lambda dp: unsupervised_train_transformation(dp[0])
+    image_transform = lambda dp: unsup_train_transformation(dp)
     train_unlabelled_ds = TransformedDataset(train_unlabelled_ds,
-                                             UDATransform(original_transform, augmentation_transform))
+                                             UDATransform(original_transform, augmentation_transform, image_transform))
 
 
     if unlabelled_batch_size is None:
@@ -100,9 +101,10 @@ class TransformedDataset(Dataset):
 
 class UDATransform:
 
-    def __init__(self, original_transform, augmentation_transform, copy=False):
+    def __init__(self, original_transform, augmentation_transform, imagetransform, copy=False):
         self.original_transform = original_transform
         self.augmentation_transform = augmentation_transform
+        self.imagetransform = imagetransform
         self.copy = copy
 
     def __call__(self, dp):
@@ -110,9 +112,11 @@ class UDATransform:
             aug_dp = dp.copy()
         else:
             aug_dp = dp
+        _, label = dp
         tdp1 = self.original_transform(dp)
-        tdp2 = self.augmentation_transform(aug_dp)
-        return tdp1, tdp2
+        tdp2, vector = self.augmentation_transform(aug_dp)
+        tdp2 = self.imagetransform(tdp2)
+        return (tdp1, label), (tdp2, vector)
 
 def stratified_train_labelled_unlabelled_split(ds, num_labelled_samples, num_classes, seed=None):
     labelled_indices = []
