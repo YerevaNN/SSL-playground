@@ -396,6 +396,7 @@ class UDA(pl.LightningModule):
         self.num_warmup_steps = hparams['num_warmup_steps']
         self.with_SWA = hparams['with_SWA']
         self.lam = hparams['consistency_lambda']
+        self.max_lam = hparams['max_lam']
         self.num_epochs = hparams['num_epochs']
         self.momentum = hparams['momentum']
         self.weight_decay = hparams['weight_decay']
@@ -471,16 +472,26 @@ class UDA(pl.LightningModule):
         unlab_x, unlab_y = unlabeled
         aug_x, aug_vec = augmented
 
-        augment_pred = self.forward(aug_x)
+        augment_pred = self.net.forward1(aug_x)
         with torch.no_grad():
-            unlab_pred = self.forward(unlab_x)
+            unlab_pred = self.net.forward1(unlab_x)
+
 
         z = torch.cat((unlab_pred, augment_pred))
         c = torch.cat((torch.zeros_like(aug_vec), aug_vec)).type(dtype=torch.cuda.FloatTensor)
 
-        unsup_loss = self.lam * hsic.HSIC(z, c)
+        unsup_loss = hsic.HSIC(z, c)
 
-        self.loss = sup_loss + unsup_loss
+        augment_pred = self.net.forward2(augment_pred)
+        with torch.no_grad():
+            unlab_pred = self.net.forward2(unlab_pred)
+
+        if (self.current_epoch < 50):
+            self.lam = self.max_lam*self.current_epoch/50
+        else:
+            self.lam = self.max_lam
+
+        self.loss = sup_loss + self.lam * unsup_loss
 
         log_dict = {
             'train_sup_acc': self.compute_accuracy(y, y_hat),
@@ -488,6 +499,7 @@ class UDA(pl.LightningModule):
             'train_unsup_logits_acc': self.compute_accuracy(unlab_y, unlab_pred),
             'training_sup_loss': sup_loss,
             'hsic': unsup_loss,
+            'lambda': self.lam,
             'training_loss': self.loss,
         }
 

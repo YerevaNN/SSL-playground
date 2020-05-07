@@ -89,9 +89,10 @@ class FastResnet(nn.Module):
 
         self.classifier = nn.Sequential(
             nn.AdaptiveMaxPool2d(1),
-            Flatten(),
-            nn.Linear(512, 10, bias=False)
+            Flatten()
         )
+
+        self.linear = nn.Linear(512, 10, bias=False)
 
         if final_weight == "auto":
             self.final_weight = nn.Parameter(torch.toTensor([0.125]))
@@ -99,15 +100,27 @@ class FastResnet(nn.Module):
             self.final_weight = final_weight
 
     def forward(self, x):
-
         x = self.prep(x)
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.classifier(x)
+        x = self.linear(x)
         x = x * self.final_weight
         return x
 
+    def forward1(self, x):
+        x = self.prep(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.classifier(x)
+        return x
+
+    def forward2(self, x):
+        x = self.linear(x)
+        x = x * self.final_weight
+        return x
 
 class IdentityResidualBlock(nn.Module):
 

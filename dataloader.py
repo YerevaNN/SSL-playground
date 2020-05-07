@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 from torch.utils.data import Subset, Dataset, DataLoader, ConcatDataset
 
@@ -60,41 +61,53 @@ def get_train_test_loaders(train_ds, test_ds, num_classes, num_labelled_samples,
         RandomErasing(scale=(0.1, 0.33)),
     ])
     train_labelled_ds = TransformedDataset(train_labelled_ds,
-                                           transform_fn=lambda dp: (train_transform(dp[0]), dp[1]))
-    test_ds = TransformedDataset(test_ds, transform_fn=lambda dp: (test_transform(dp[0]), dp[1]))
+                                           transform_fn=lambda dp: (train_transform(dp[0]), dp[1]), shuffle=True,
+                                           shuffle_seed=1)
+    test_ds = TransformedDataset(test_ds, transform_fn=lambda dp: (test_transform(dp[0]), dp[1]), shuffle=True,
+                                 shuffle_seed=1)
 
     original_transform = lambda dp: train_transform(dp[0])
     augmentation_transform = lambda dp: unsupervised_train_transformation(dp[0])
     image_transform = lambda dp: unsup_train_transformation(dp)
     train_unlabelled_ds = TransformedDataset(train_unlabelled_ds,
-                                             UDATransform(original_transform, augmentation_transform, image_transform))
+                                             UDATransform(original_transform, augmentation_transform, image_transform),
+                                             shuffle=True, shuffle_seed=1)
 
 
     if unlabelled_batch_size is None:
         unlabelled_batch_size = batch_size
 
     train_labelled_loader = DataLoader(train_labelled_ds, batch_size=batch_size, num_workers=num_workers,
-                                       pin_memory=pin_memory)
+                                       pin_memory=pin_memory, shuffle=True)
 
     train_unlabelled_loader = DataLoader(train_unlabelled_ds, batch_size=unlabelled_batch_size, num_workers=num_workers,
-                                         pin_memory=pin_memory)
+                                         pin_memory=pin_memory, shuffle=True)
 
-    test_loader = DataLoader(test_ds, batch_size=batch_size * 2, num_workers=num_workers, pin_memory=pin_memory)
+    test_loader = DataLoader(test_ds, batch_size=batch_size * 2, num_workers=num_workers, pin_memory=pin_memory,
+                             shuffle=True)
 
     return train_labelled_loader, train_unlabelled_loader, test_loader
 
 class TransformedDataset(Dataset):
 
-    def __init__(self, ds, transform_fn):
+    def __init__(self, ds, transform_fn, shuffle, shuffle_seed):
         assert isinstance(ds, Dataset)
         assert callable(transform_fn)
         self.ds = ds
         self.transform_fn = transform_fn
+        self.length = len(self.ds)
+        self.permutation = torch.arange(end=self.length)
+        if shuffle:
+            if shuffle_seed is None:
+                raise ValueError("If shuffle is set to True shuffle_seed must be specified")
+            generator = torch.Generator().manual_seed(shuffle_seed)
+            self.permutation = torch.randperm(self.length, generator=generator)
 
     def __len__(self):
         return len(self.ds)
 
     def __getitem__(self, index):
+        index = self.permutation[index]
         dp = self.ds[index]
         return self.transform_fn(dp)
 
