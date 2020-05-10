@@ -1,0 +1,35 @@
+{
+    "experiment_name": "cifar_uda_tsa",
+    "version_name": "1.0.0",
+
+    "dataset": "CIFAR10",
+    "data_path": ".",
+
+    "model": "fastresnet",
+    "depth": 28,
+    "width": 2,
+    "number_of_classes": 10,
+
+    "momentum": 0.9,
+    "weight_decay": 1e-4,
+    "batch_size": 32,
+    "unlabelled_batch_size": 368,
+    "num_workers": 0,
+
+    "num_epochs": 400,
+
+    "learning_rate": 0.03,
+    "min_lr_ratio": 0.004,
+    "num_warmup_steps": 0,
+
+    "num_labelled_samples": 4000,
+    "consistency_lambda": 1,
+    "consistency_criterion": "KL",
+
+    "with_TSA": "True",
+    "TSA_proba_min": 0.1,
+    "TSA_proba_max": 1.0,
+
+    "no_UDA": "False",
+    "with_SWA": "False"
+}

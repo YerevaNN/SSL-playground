@@ -464,7 +464,8 @@ class UDA(pl.LightningModule):
 
         x, y = sup_batch
         y_hat = self.forward(x)
-        sup_loss = self.classification_loss(y_hat, y)
+        tsa_y_hat, tsa_y = self.tsa(y_hat, y)
+        sup_loss = self.classification_loss(tsa_y_hat, tsa_y)
 
         unlabeled, augmented = unsup_batch
 
