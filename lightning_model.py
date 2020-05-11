@@ -396,6 +396,7 @@ class UDA(pl.LightningModule):
         self.num_warmup_steps = hparams['num_warmup_steps']
         self.with_SWA = hparams['with_SWA']
         self.lam = hparams['consistency_lambda']
+        self.max_lam = hparams['max_lam']
         self.num_epochs = hparams['num_epochs']
         self.momentum = hparams['momentum']
         self.weight_decay = hparams['weight_decay']
@@ -459,13 +460,12 @@ class UDA(pl.LightningModule):
         return [self.train_labeled_loader, self.train_unlabeled_loader]
 
     def training_step(self, batch_list, batch_inx):
-
         sup_batch, unsup_batch = batch_list
 
         x, y = sup_batch
         y_hat = self.forward(x)
-        tsa_y_hat, tsa_y = self.tsa(y_hat, y)
-        sup_loss = self.classification_loss(tsa_y_hat, tsa_y)
+        # tsa_y_hat, tsa_y = self.tsa(y_hat, y)
+        sup_loss = self.classification_loss(y_hat, y)
 
         unlabeled, augmented = unsup_batch
 
@@ -476,10 +476,14 @@ class UDA(pl.LightningModule):
         with torch.no_grad():
             unlab_pred = self.forward(unlab_x)
 
+        if (self.current_epoch<50):
+            self.lam = self.max_lam*(self.current_epoch/50)
+        else:
+            self.lam = self.max_lam
+
         unsup_loss = self.lam * self.consistency_loss(augment_pred, unlab_pred)
 
         self.loss = sup_loss + unsup_loss
-
 
         log_dict = {
             'train_sup_acc': self.compute_accuracy(y, y_hat),
@@ -488,6 +492,7 @@ class UDA(pl.LightningModule):
             'training_sup_loss': sup_loss,
             'training_unsup_loss': unsup_loss,
             'training_loss': self.loss,
+            'lam': self.lam
         }
 
         return {'loss': self.loss, 'log': log_dict}

@@ -1,6 +1,6 @@
 {
-    "experiment_name": "cifar_uda_tsa",
-    "version_name": "1.0.0",
+    "experiment_name": "cifar_uda",
+    "version_name": "1.0.0_shuffling_lambda_scheduling",
 
     "dataset": "CIFAR10",
     "data_path": ".",
@@ -16,14 +16,15 @@
     "unlabelled_batch_size": 368,
     "num_workers": 0,
 
-    "num_epochs": 400,
+    "num_epochs": 200,
 
     "learning_rate": 0.03,
     "min_lr_ratio": 0.004,
     "num_warmup_steps": 0,
 
     "num_labelled_samples": 4000,
-    "consistency_lambda": 1,
+    "consistency_lambda": 0,
+    "max_lam": 1,
     "consistency_criterion": "KL",
 
     "with_TSA": "True",
