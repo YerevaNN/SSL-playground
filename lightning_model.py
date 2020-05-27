@@ -465,9 +465,7 @@ class UDA(pl.LightningModule):
 
         x, y = sup_batch
         y_hat = self.forward(x)
-        y_tsa_hat, y_tsa = self.tsa(y_hat, y)
-        # sup_loss = self.classification_loss(y_hat, y)
-        sup_loss = self.classification_loss(y_tsa_hat, y_tsa)
+        sup_loss = self.classification_loss(y_hat, y)
 
         unlabeled, augmented = unsup_batch
 
@@ -482,29 +480,31 @@ class UDA(pl.LightningModule):
         z = torch.cat((unlab_pred, augment_pred))
         c = torch.cat((torch.zeros_like(aug_vec), aug_vec)).type(dtype=torch.cuda.FloatTensor)
 
-        unsup_loss = hsic.HSIC(z, c)
+        hsic_unsup = hsic.HSIC(z, c)
 
         augment_pred = self.net.forward2(augment_pred)
         with torch.no_grad():
             unlab_pred = self.net.forward2(unlab_pred)
 
-        if (self.current_epoch < 50):
-            self.lam = self.max_lam*self.current_epoch/50
-        else:
-            self.lam = self.max_lam
+        # if (self.current_epoch < 50):
+        #     self.lam = self.max_lam*self.current_epoch/50
+        # else:
+        #     self.lam = self.max_lam
 
-        self.loss = sup_loss + self.lam * unsup_loss
+        unsup_loss = self.consistency_loss(augment_pred, unlab_pred)
+        self.loss = sup_loss + self.lam * hsic_unsup
 
         log_dict = {
             'train_sup_acc': self.compute_accuracy(y, y_hat),
             'train_unsup_acc': self.compute_accuracy(torch.argmax(unlab_pred, dim=-1), augment_pred),
             'train_unsup_logits_acc': self.compute_accuracy(unlab_y, unlab_pred),
             'training_sup_loss': sup_loss,
-            'hsic': unsup_loss,
+            'hsic': hsic_unsup,
+            'unsup_loss': unsup_loss,
             'lambda': self.lam,
             'training_loss': self.loss,
+            'lr': torch.as_tensor(self.optimizer_sched.state_dict()['_last_lr'])
         }
-
         return {'loss': self.loss, 'log': log_dict}
 
     @pl.data_loader
@@ -528,12 +528,11 @@ class UDA(pl.LightningModule):
         return torch.sum(y == y_hat).item() / len(y)
 
     def configure_optimizers(self):
-        optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=self.momentum,
+        self.optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=self.momentum,
                               weight_decay=self.weight_decay, nesterov=True)
-        optimizer_sched = optim.lr_scheduler.CosineAnnealingLR(optimizer, eta_min=self.eta_min,
+        self.optimizer_sched = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, eta_min=self.eta_min,
                                                               T_max=(len(self.train_labeled_loader)*self.num_epochs - self.num_warmup_steps))
-
-        return [optimizer], [optimizer_sched]
+        return [self.optimizer], [self.optimizer_sched]
 
     def final_loss(self, y_hat, y_true, unsup_aug_y_probas, unsup_orig_y_probas):
         return self.classification_loss(y_hat, y_true) + \
