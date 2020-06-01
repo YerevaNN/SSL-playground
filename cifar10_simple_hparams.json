@@ -1,5 +1,5 @@
 {
-    "experiment_name": "cifar_uda_tsa",
+    "experiment_name": "cifar_uda_test",
     "version_name": "1.0.0_tsa_hsic_shuffle_lambda_scheduling",
 
     "dataset": "CIFAR10",
