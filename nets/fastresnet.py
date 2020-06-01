@@ -4,10 +4,8 @@
 import torch
 import torch.nn as nn
 
-
 def fastresnet():
     return FastResnet()
-
 
 def batch_norm(num_channels, bn_bias_init=None, bn_bias_freeze=False,
                bn_weight_init=None, bn_weight_freeze=False):

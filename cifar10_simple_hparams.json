@@ -1,6 +1,6 @@
 {
     "experiment_name": "cifar_uda",
-    "version_name": "1.0.0_shuffling_lambda_scheduling",
+    "version_name": "8.0.0",
 
     "dataset": "CIFAR10",
     "data_path": ".",
@@ -23,7 +23,7 @@
     "num_warmup_steps": 0,
 
     "num_labelled_samples": 4000,
-    "consistency_lambda": 0,
+    "consistency_lambda": 1,
     "max_lam": 1,
     "consistency_criterion": "KL",
 
