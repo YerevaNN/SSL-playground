@@ -83,7 +83,7 @@ class UDA(pl.LightningModule):
         # else:
         #     self.lam = self.max_lam
 
-        unsup_loss = self.lam * self. self.consistency_loss(augment_pred, unlab_pred)
+        unsup_loss = self.lam * self.consistency_loss(augment_pred, unlab_pred)
 
         self.loss = sup_loss + unsup_loss
 
