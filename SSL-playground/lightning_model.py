@@ -153,7 +153,7 @@ class UDA(pl.LightningModule):
         )
 
         tt_logger = TestTubeLogger(
-            save_dir="logs",
+            save_dir="../logs",
             name="{}_{}".format(hparams['experiment_name'], hparams['model']),
             version=hparams['version_name'],
             debug=False,
@@ -161,8 +161,8 @@ class UDA(pl.LightningModule):
         )
 
         trainer = UdaTrainer(gpus=-1, early_stop_callback=None, logger=tt_logger, show_progress_bar=True,
-                          checkpoint_callback=checkpoint_callback, check_val_every_n_epoch=1, default_save_path="./checkpoints",
-                          val_check_interval=30, max_epochs=hparams['num_epochs'], log_save_interval=1, row_log_interval=1)
+                             checkpoint_callback=checkpoint_callback, check_val_every_n_epoch=1, default_save_path="../checkpoints",
+                             val_check_interval=30, max_epochs=hparams['num_epochs'], log_save_interval=1, row_log_interval=1)
 
         trainer.fit(self)
 
@@ -174,7 +174,7 @@ class UDA(pl.LightningModule):
 
 if __name__ == "__main__":
 
-    with open('cifar10_simple_hparams.json') as f:
+    with open('../cifar10_simple_hparams.json') as f:
         hparams= json.load(f)
 
     train_ds, valid_ds, num_classes = cifar.datasets.get_train_test_datasets(hparams['dataset'], hparams['data_path'])
