@@ -171,10 +171,9 @@ class UDA(pl.LightningModule):
         self.eval()
         #self.freeze()
 
-
 if __name__ == "__main__":
 
-    with open('../cifar10_simple_hparams.json') as f:
+    with open('cifar10_simple_hparams.json') as f:
         hparams= json.load(f)
 
     train_ds, valid_ds, num_classes = cifar.datasets.get_train_test_datasets(hparams['dataset'], hparams['data_path'])
