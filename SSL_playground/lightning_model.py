@@ -11,11 +11,11 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.logging import TestTubeLogger
 
-from dataloader import get_train_test_loaders
-from helpers.tsa import TrainingSignalAnnealing
-from nets.fastresnet import FastResnet
-import cifar.datasets
-from uda_trainer import UdaTrainer
+from SSL_playground.dataloader import get_train_test_loaders
+from SSL_playground.helpers.tsa import TrainingSignalAnnealing
+from SSL_playground.nets.fastresnet import FastResnet
+from SSL_playground.uda_trainer import UdaTrainer
+from SSL_playground.cifar.datasets import get_train_test_datasets
 
 class UDA(pl.LightningModule):
     def __init__(self, hparams:Namespace) -> None:
@@ -160,7 +160,7 @@ class UDA(pl.LightningModule):
             create_git_tag=False,
         )
 
-        trainer = UdaTrainer(gpus=-1, early_stop_callback=None, logger=tt_logger, show_progress_bar=True,
+        trainer = UdaTrainer(gpus=0, early_stop_callback=None, logger=tt_logger, show_progress_bar=True,
                              checkpoint_callback=checkpoint_callback, check_val_every_n_epoch=1, default_save_path="../checkpoints",
                              val_check_interval=30, max_epochs=hparams['num_epochs'], log_save_interval=1, row_log_interval=1)
 
@@ -176,7 +176,7 @@ if __name__ == "__main__":
     with open('cifar10_simple_hparams.json') as f:
         hparams= json.load(f)
 
-    train_ds, valid_ds, num_classes = cifar.datasets.get_train_test_datasets(hparams['dataset'], hparams['data_path'])
+    train_ds, valid_ds, num_classes = get_train_test_datasets(hparams['dataset'], hparams['data_path'])
     model = UDA(Namespace(**hparams))
     model.set_datasets(train_ds, valid_ds, num_classes)
 
@@ -184,7 +184,6 @@ if __name__ == "__main__":
     # model.load()
     # # out = model(test_dataset=valid_ds)
     # # print(out)
-
 
 
 

@@ -5,8 +5,8 @@ from torch.utils.data import Subset, Dataset, DataLoader
 
 from torchvision.transforms import Compose, ToTensor, Normalize, Pad, RandomCrop, RandomHorizontalFlip
 
-from helpers import autoaugment
-from helpers.transforms import RandomErasing
+from SSL_playground.helpers import autoaugment
+from SSL_playground.helpers.transforms import RandomErasing
 
 def set_seed(seed):
     import random
