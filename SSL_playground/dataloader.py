@@ -1,15 +1,12 @@
 import numpy as np
 import torch
 
-from torch.utils.data import Subset, Dataset, DataLoader, ConcatDataset
+from torch.utils.data import Subset, Dataset, DataLoader
 
 from torchvision.transforms import Compose, ToTensor, Normalize, Pad, RandomCrop, RandomHorizontalFlip
-from torch.utils.data.sampler import SubsetRandomSampler
 
-from cifar.datasets import get_train_test_datasets as get_cifar_train_test_datasets
-
-from helpers import autoaugment
-from helpers.transforms import RandomErasing
+from SSL_playground.helpers import autoaugment
+from SSL_playground.helpers.transforms import RandomErasing
 
 def set_seed(seed):
     import random
