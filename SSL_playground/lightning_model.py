@@ -1,4 +1,3 @@
-import json
 from argparse import Namespace
 import os
 import numpy as np
@@ -15,7 +14,6 @@ from SSL_playground.dataloader import get_train_test_loaders
 from SSL_playground.helpers.tsa import TrainingSignalAnnealing
 from SSL_playground.nets.fastresnet import FastResnet
 from SSL_playground.uda_trainer import UdaTrainer
-from SSL_playground.cifar.datasets import get_train_test_datasets
 
 class UDA(pl.LightningModule):
     def __init__(self, hparams:Namespace) -> None:
@@ -85,7 +83,7 @@ class UDA(pl.LightningModule):
 
         unsup_loss = self.lam * self.consistency_loss(augment_pred, unlab_pred)
 
-        self.loss = sup_loss + unsup_loss
+        self.loss = sup_loss + self.lam*unsup_loss
 
         log_dict = {
             'train_sup_acc': self.compute_accuracy(y, y_hat),
@@ -153,7 +151,7 @@ class UDA(pl.LightningModule):
         )
 
         tt_logger = TestTubeLogger(
-            save_dir="../logs",
+            save_dir="logs",
             name="{}_{}".format(hparams['experiment_name'], hparams['model']),
             version=hparams['version_name'],
             debug=False,
@@ -171,19 +169,19 @@ class UDA(pl.LightningModule):
         self.eval()
         #self.freeze()
 
-if __name__ == "__main__":
-
-    with open('../cifar10_simple_hparams.json') as f:
-        hparams= json.load(f)
-
-    train_ds, valid_ds, num_classes = get_train_test_datasets(hparams['dataset'], hparams['data_path'])
-    model = UDA(Namespace(**hparams))
-    model.set_datasets(train_ds, valid_ds, num_classes)
-
-    model.fit_model()
-    # model.load()
-    # # out = model(test_dataset=valid_ds)
-    # # print(out)
+# if __name__ == "__main__":
+#
+#     with open('../cifar10_simple_hparams.json') as f:
+#         hparams= json.load(f)
+#
+#     train_ds, valid_ds, num_classes = get_train_test_datasets(hparams['dataset'], hparams['data_path'])
+#     model = UDA(Namespace(**hparams))
+#     model.set_datasets(train_ds, valid_ds, num_classes)
+#
+#     model.fit_model()
+#     # model.load()
+#     # # out = model(test_dataset=valid_ds)
+#     # # print(out)
 
 
 
