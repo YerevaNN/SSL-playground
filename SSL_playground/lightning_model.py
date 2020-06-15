@@ -96,7 +96,7 @@ class UDA(pl.LightningModule):
         #     self.lam = self.max_lam
 
         unsup_loss = self.consistency_loss(augment_pred, unlab_pred)
-        self.loss = sup_loss + self.lam * hsic_unsup
+        self.loss = sup_loss + self.lam * unsup_loss
 
         log_dict = {
             'train_sup_acc': self.compute_accuracy(y, y_hat),
@@ -146,11 +146,11 @@ class UDA(pl.LightningModule):
         return cross_entropy(y_pred, y_true)
 
     def consistency_loss(self, unsup_aug_y_probas, unsup_orig_y_probas):
-        unsup_aug_y_probas = torch.log_softmax(unsup_aug_y_probas, dim=-1)
-        unsup_orig_y_probas = torch.softmax(unsup_orig_y_probas, dim=-1)
         if self.consistency_criterion == "MSE":
             return mse_loss(unsup_aug_y_probas, unsup_orig_y_probas)
         elif self.consistency_criterion == "KL":
+            unsup_aug_y_probas = torch.log_softmax(unsup_aug_y_probas, dim=-1)
+            unsup_orig_y_probas = torch.softmax(unsup_orig_y_probas, dim=-1)
             return kl_div(unsup_aug_y_probas, unsup_orig_y_probas, reduction='batchmean')
 
 
