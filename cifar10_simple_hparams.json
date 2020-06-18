@@ -1,6 +1,6 @@
 {
     "experiment_name": "cifar_uda",
-    "version_name": "9.0.0",
+    "version_name": "1.0.0",
 
     "dataset": "CIFAR10",
     "data_path": ".",

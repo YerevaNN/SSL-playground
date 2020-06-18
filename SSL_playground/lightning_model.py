@@ -133,11 +133,11 @@ class UDA(pl.LightningModule):
         return cross_entropy(y_pred, y_true)
 
     def consistency_loss(self, unsup_aug_y_probas, unsup_orig_y_probas):
-        unsup_aug_y_probas = torch.log_softmax(unsup_aug_y_probas, dim=-1)
-        unsup_orig_y_probas = torch.softmax(unsup_orig_y_probas, dim=-1)
         if self.consistency_criterion == "MSE":
-            return mse_loss(unsup_aug_y_probas, unsup_orig_y_probas)
+            return mse_loss(torch.softmax(unsup_aug_y_probas, dim=-1), torch.softmax(unsup_orig_y_probas, dim=-1))
         elif self.consistency_criterion == "KL":
+            unsup_aug_y_probas = torch.log_softmax(unsup_aug_y_probas, dim=-1)
+            unsup_orig_y_probas = torch.softmax(unsup_orig_y_probas, dim=-1)
             return kl_div(unsup_aug_y_probas, unsup_orig_y_probas, reduction='batchmean')
 
 
@@ -158,7 +158,7 @@ class UDA(pl.LightningModule):
             create_git_tag=False,
         )
 
-        trainer = UdaTrainer(gpus=0, early_stop_callback=None, logger=tt_logger, show_progress_bar=True,
+        trainer = UdaTrainer(gpus=-1, early_stop_callback=None, logger=tt_logger, show_progress_bar=True,
                              checkpoint_callback=checkpoint_callback, check_val_every_n_epoch=1, default_save_path="../checkpoints",
                              val_check_interval=30, max_epochs=hparams['num_epochs'], log_save_interval=1, row_log_interval=1)
 
