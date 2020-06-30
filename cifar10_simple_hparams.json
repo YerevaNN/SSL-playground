@@ -1,6 +1,6 @@
 {
     "experiment_name": "cifar_mean_teacher",
-    "version_name": "4.0.0_teacher",
+    "version_name": "7.0.0_monitor_hsic",
 
     "dataset": "CIFAR10",
     "data_path": ".",
