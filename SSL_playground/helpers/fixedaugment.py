@@ -19,51 +19,31 @@ class CIFAR10Policy(object):
     """
     def __init__(self, fillcolor=(128, 128, 128)):
         self.operations = [
-            "shearX",
-            "shearY",
-            "translateX",
-            "translateY",
-            "rotate",
-            "color",
-            "posterize",
-            "solarize",
-            "contrast",
-            "sharpness",
-            "brightness",
-            "autocontrast",
-            "equalize",
-            "invert"
+            Operation("shearX", 8, fillcolor),
+            Operation("shearY", 8, fillcolor),
+            Operation("translateX", 9, fillcolor),
+            Operation("translateY", 9, fillcolor),
+            Operation("rotate", 2, fillcolor),
+            Operation("color", 3, fillcolor),
+            Operation("posterize", 7, fillcolor),
+            Operation("solarize", 8, fillcolor),
+            Operation("contrast", 7, fillcolor),
+            Operation("sharpness", 6, fillcolor),
+            Operation("brightness", 3, fillcolor),
+            Operation("autocontrast", 2, fillcolor),
+            Operation("equalize", 8, fillcolor),
+            Operation("invert", 3, fillcolor)
         ]
 
     def __call__(self, img):
-        operation_idx = random.randint(0, len(self.policies) - 1)
+        operation_idx = random.randint(0, len(self.operations) - 1)
         return self.operations[operation_idx](img)
 
     def __repr__(self):
-        return "AutoAugment CIFAR10 Policy"
+        return "FixedAugment CIFAR10 Policy"
 
-
-# class SubPolicy(object):
-#     def __init__(self, p1, operation1, magnitude_idx1, p2, operation2, magnitude_idx2, fillcolor=(128, 128, 128)):
-#
-#         ranges = {
-#             "shearX": np.linspace(0, 0.3, 10),
-#             "shearY": np.linspace(0, 0.3, 10),
-#             "translateX": np.linspace(0, 150 / 331, 10),
-#             "translateY": np.linspace(0, 150 / 331, 10),
-#             "rotate": np.linspace(0, 30, 10),
-#             "color": np.linspace(0.0, 0.9, 10),
-#             "posterize": np.round(np.linspace(8, 4, 10), 0).astype(np.int),
-#             "solarize": np.linspace(256, 0, 10),
-#             "contrast": np.linspace(0.0, 0.9, 10),
-#             "sharpness": np.linspace(0.0, 0.9, 10),
-#             "brightness": np.linspace(0.0, 0.9, 10),
-#             "autocontrast": [1] * 10,
-#             "equalize": [1] * 10,
-#             "invert": [1] * 10
-#         }
 class Operation(object):
-    def __init__(self, operation, magnitude_indx, fillcolor=(128, 128, 128)):
+    def __init__(self, operation, magnitude_idx, fillcolor=(128, 128, 128)):
 
         ranges = {
             "shearX": np.linspace(0, 0.3, 10),
@@ -109,32 +89,14 @@ class Operation(object):
             "invert": lambda img, magnitude: ImageOps.invert(img)
         }
 
-        # self.p1 = p1
         self.operation = self.func[operation]
         if operation in ("shearX", "shearY", "translateX", "translateY", "brightness", "color", "contrast", "sharpness"):
             self.magnitude = ranges[operation][magnitude_idx] * random.choice([-1, 1])
         else:
             self.magnitude = ranges[operation][magnitude_idx]
-        # self.p2 = p2
-        # self.operation2 = self.func[operation2]
-        # if operation2 in ("shearX", "shearY", "translateX", "translateY", "brightness", "color", "contrast", "sharpness"):
-        #     self.magnitude2 = ranges[operation2][magnitude_idx2] * random.choice([-1, 1])
-        # else:
-        #     self.magnitude2 = ranges[operation2][magnitude_idx2]
 
     def __call__(self, img):
         augmentation_vector = np.zeros(14)
-        img = self.self.operation(img, self.magnitude)
+        img = self.operation(img, self.magnitude)
         augmentation_vector[list(self.func.values()).index(self.operation)] = self.magnitude
-        # if random.random() < self.p1:
-        #     img = self.operation1(img, self.magnitude1)
-        #     if self.operation1 in ("color", "posterize", "solarize", "contrast", "sharpness", "brightness",
-        #                            "autocontrast",  "equalize", "invert"):
-        #         augmentation_vector[list(self.func.values()).index(self.operation1) - 5] = self.magnitude1
-        # if random.random() < self.p2:
-        #     img = self.operation2(img, self.magnitude2)
-        #     if self.operation2 in ("color", "posterize", "solarize", "contrast", "sharpness", "brightness",
-        #                            "autocontrast",  "equalize", "invert"):
-        #         augmentation_vector[list(self.func.values()).index(self.operation2) - 5] = self.magnitude2
-
         return img, augmentation_vector
