@@ -18,8 +18,9 @@ class LoadData(data_loading.TrainerDataLoadingMixin):
         # val datasets could be none, 1 or 2+
         if self.get_train_dataloaders() is not None:
             self._percent_range_check('train_percent_check')
-
-            self.num_training_batches = sum(len(dataloader) for dataloader in self.get_train_dataloaders())
+            
+            self.num_training_batches = len(self.get_train_dataloaders()[0])
+            # self.num_training_batches = sum(len(dataloader) for dataloader in self.get_train_dataloaders())
             self.num_training_batches = int(self.num_training_batches * self.train_percent_check)
 
         if isinstance(self.val_check_interval, int):

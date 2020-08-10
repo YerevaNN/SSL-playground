@@ -1,0 +1,33 @@
+{
+    "experiment_name": "voc_uda",
+    "version_name": "1.0.0",
+
+    "dataset": "voc2007",
+    "data_path": ".",
+
+    "model": "fasterrcnn",
+
+    "momentum": 0.9,
+    "weight_decay": 0.0005,
+    "batch_size": 1,
+    "unlabelled_batch_size": 2,
+    "num_workers": 0,
+
+    "num_epochs": 1000,
+
+    "learning_rate": 0.0001,
+    "min_lr_ratio": 0.004,
+    "num_warmup_steps": 0,
+
+    "num_labelled_samples": 220,
+    "consistency_lambda": 1,
+    "max_lam": 1,
+    "consistency_criterion": "KL",
+
+    "with_TSA": "True",
+    "TSA_proba_min": 0.1,
+    "TSA_proba_max": 1.0,
+
+    "no_UDA": "False",
+    "with_SWA": "False"
+}
