@@ -1,0 +1,36 @@
+== Data Selection
+Unifies both the passive and active learning (See below).
+Implemented as `LabelShopper` API, which can be configured using `conf.yml` file
+under the `lwll` config block.
+
+
+=== Passive Learning
+
+We define *passive learning* as the data selection strategy without interacting with the ML model.
+Here we don't utilize any signal or feedback from the model on the test set.
+However, we (/teacher) look at the source side of the test to decide what learning material (/examples) to be given to the learner.
+This is easier than the _active learning_ and provides an important baseline for AL to compare with.
+
+[source,yaml]
+----
+lwll:
+  shopper:
+    type: random  # choices: random, diverse, overfit
+   # rest of lwll config
+# rest of the experiment config
+----
+
+. `random`   selects random examples
+. `diverse`  selects examples such that the word types are diversified
+. `overfit`  __WIP: to be done__
+
+
+
+=== Active Learning
+*Active learning* utilizes model performance on the test examples(/problems) to decide what more
+learning material(/training examples) to be given.
+TODO: -TBD-
+
+
+
+

@@ -1,0 +1,26 @@
+= CORAL Machine Translation
+USC Information Sciences Institute; CORAL team (Thamme Gowda, Lukas Ferrer, Jonathan May, Aram Galstyan)
+:doctype: article
+:encoding: utf-8
+:lang: en
+:toclevels: 3
+:sectnums:
+:sectnumlevels: 4
+:data-uri:
+:toc: left
+//injects google analytics to <head>
+:docinfo2:
+:description: Coral Machine Translation
+:keywords: CORA MT, USC ISI, Machine Translation
+
+== Intro
+
+Supervised and unsupervised machine translation pipeline(s) from USC ISI Coral team are hosted in
+the repository https://gitlab.lollllz.com/usc-isi/coral/
+
+
+include::setup.adoc[]
+
+include::coralmt.adoc[]
+
+include::activelearning.adoc[]

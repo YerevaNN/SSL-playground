@@ -1,0 +1,142 @@
+== CORAL Supervised NMT
+Supervised NMT is extension of RTG (v0.4.1) to LWLL task.
+
+NOTE: Some of the CLI tools from the base version is still applicable (e.g. `rtg-decode`, `rtg-fork`, `rtg-export` etc).
+
+WARNING: The `rtg-pipe`/ `python -m rtg.pipeline` is not valid, so please DONT use it here. Instead use `coral-snmt` command (setup by pip).
+
+
+The config block has a new section called `lwll` at the top level (<<conf.yml,shown below>>).
+All other sections, refer to https://isi-nlp.github.io/rtg/#conf.
+
+[[conf.yml]]
+=== Minimal config
+.conf.yml
+[source,yaml]
+----
+lwll: # <1>
+  base_url: https://api-dev.lollllz.com/ # <2>
+  task_id: 06023f86-a66b-4b2c-8b8b-951f5edd0f22  # <3>
+  user_secret: ____ # <4>
+  session_name: TG's sample MT # <5>
+  data_type: full   # sample
+  data_path: /Users/tg/work/isi/lwll/datasets/development <6>
+model_args:
+  src_vocab: 8000
+  tgt_vocab: 8000
+  enc_layers: 4
+  dec_layers: 4
+  hid_size: 512
+  ff_size: 2048
+  n_heads: 8
+  attn_bias: true
+  attn_dropout: 0.1
+  dropout: 0.2
+  activation: relu
+  tied_emb: one-way
+model_type: tfmnmt
+optim:
+  name: ADAM
+  args:
+    betas:
+    - 0.9
+    - 0.98
+    eps: 1.0e-09
+    label_smoothing: 0.1
+    lr: 0.1
+    warmup_steps: 8000
+    criterion: smooth_kld
+    constant: 2
+    amsgrad: false
+    weight_decay: 0
+    inv_sqrt: false
+prep:
+  max_src_types: 8000
+  max_tgt_types: 8000
+  char_coverage: 0.9998
+  pieces: bpe
+  shared_vocab: false
+  src_len: 128
+  tgt_len: 128
+  truncate: false
+  # train_src , train_tgt valid_src valid_tgt # <10>
+  mono_src: <7>
+  - /Users/tg/work/isi/lwll/datasets/monolingual_corpora/wiki-ar.10k.tok
+  mono_tgt: <8>
+  - /Users/tg/work/isi/lwll/datasets/monolingual_corpora/wiki-en.10k.tok
+tester:
+  decoder:
+    beam_size: 2
+    batch_size: 12000 # this is for 1 beam; effective_batch_size = batch_size / beam_size
+    lp_alpha: 0.6     # length penalty
+    #ensemble: 5  TODO: support ensemble # <9>
+    max_len: 50
+trainer:
+  init_args:
+    chunk_size: 10
+  batch_size: 4096
+  check_point: 1000
+  keep_models: 20
+  steps: 10000
+updated_at: '2020-07-03T22:11:14.352115'
+seed: 12345  # seed RNGs
+----
+<1> `lwll` block is only understood by `rtglwll` but not the `rtg` model.
+<2> API URL of development server. It can point to staging or production when we advance to that stage
+<3> Task ID -- for MT task -- set by LWLL team who created the task
+<4> This is the team secret. This string identifies and authenticat]es the performer (we are called 'coral')
+Always keep this in private. Ask a team member (eg TG) to share it with you.
+<5> Pick a name for this system. This string helps you locate the results in frontend https://frontend.lollllz.com/
+<6> This is the path of all data directory. See <<lwll-data,LWLL dataset download>>
+<7> Monolingual source to be used for creating source side BPE vocabulary.
+This is optional as the MT  task provides source side parallel data
+<8> Monolingual target to be used for creating the target side BPE vocabulary.
+<9> Ensembling is not supported as of now
+<10> No need to set {train,valid}_{src,tgt}. These are retrieved from LwLL API dynamically
+
+
+=== CLI
+To run an experiment, use `coral-snmt -h` or `python -m coralmt.snmt -h`.
+[source, bash]
+----
+$ coral-snmt -h
+usage: coral-unmt [-h] [-G] exp [conf]
+
+CORAL Supervised NMT pipeline for LwLL
+
+positional arguments:
+  exp             Working directory of experiment
+  conf            Config File. By default <work_dir>/conf.yml is used
+
+optional arguments:
+  -h, --help      show this help message and exit
+  -G, --gpu-only  Crash if no GPU is available
+----
+
+[source, bash]
+----
+# Start an experiment from `examples/simple-aren.yml`
+coralmt runs/001-aren examples/simple-aren.yml
+
+# if conf.yml is already placed in `runs/001-aren`
+coralmt runs/001-aren
+----
+
+== Coral Unsupervised NMT
+
+Coral UNMT is an extension of https://github.com/thammegowda/unmass which is derived from https://github.com/microsoft/MASS/tree/master/MASS-unsupNMT
+
+TODO: docs
+
+[souce,bash]
+----
+$ coral-unmt -h
+usage: coral-unmt [-h] exp
+
+positional arguments:
+  exp         experiment path
+
+optional arguments:
+  -h, --help  show this help message and exit
+----
+

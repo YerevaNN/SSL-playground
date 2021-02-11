@@ -1,0 +1,22 @@
+# CORAL Team's Submission to LwLL
+USC Information Sciences Institute; CORAL team
+:doctype: book
+:encoding: utf-8
+:lang: en
+:toclevels: 3
+:sectnums:
+:sectnumlevels: 4
+:data-uri:
+:toc:
+
+.Links
+
+- Code: https://gitlab.lollllz.com/usc-isi/coral/
+- Docs: https://usc-isi.lollllz.com/coral/
+
+
+.Sub Tasks:
+
+1. link:coralmt.html[CORAL MT] docs
+2. Image Recognition :TODO:
+3. Object Detection :TODO:

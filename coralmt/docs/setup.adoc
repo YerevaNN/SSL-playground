@@ -1,0 +1,48 @@
+
+== Setup
+
+
+[source,bash]
+----
+conda create -n env rtg python=3.7
+
+conda activate rtg
+# install
+cd <coralmt>  # the dir where setup.py file is found
+pip install --editable .
+# --editable flag enables development mode
+
+----
+
+[#lwll-data]
+== Download Data sets
+
+To download datasets, follow instructions on https://gitlab.lollllz.com/lwll/dataset_prep
+[source,bash]
+----
+# lwll folks still use 3.6
+conda create -n lwll python=3.6
+conda activate lwll
+pip install -r cli_requirements.txt
+----
+
+[source,bash]
+----
+DATA=~/lwll_datasets  # or whereever you like to store
+# parallel datasets
+for name in global_voices ted_talks; do
+    python download.py download_data --dataset $name --stage development --output $DATA --overwrite False
+done
+
+# Monolingual data
+for name in wiki-ar wiki-en
+  python download_monolingual.py download_data --dataset $name --output $DATA --overwrite False
+done
+----
+
+[NOTE]
+====
+ 1. Monolingual data for english is huge. Sample 7 or 10M sentences for development
+
+TODO: add instructions for cleaning monolingual data. we dont need urls.
+====
