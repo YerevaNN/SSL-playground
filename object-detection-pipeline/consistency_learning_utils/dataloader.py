@@ -131,7 +131,7 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
 
     train_unlabelled_ds = MyDataset(unlabelled_file_path, target_required=False, img_name_required=False)
     test_ds = MyDataset(testing_file_path, target_required=False, img_name_required=True)
-    if stage == 0:
+    if stage == 0 or validation_part == 0:
         train_labelled_ds = MyDataset(labeled_file_path, target_required=True, img_name_required=False,
                                       label_root=label_root)
         val_ds = MyDataset(labeled_file_path, target_required=True, img_name_required=False,

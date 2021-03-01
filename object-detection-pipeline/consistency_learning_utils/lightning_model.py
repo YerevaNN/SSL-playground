@@ -487,7 +487,7 @@ class STAC(pl.LightningModule):
         return self.val_loader
 
     def validation_step(self, batch, batch_idx):
-        if self.stage == 0:
+        if self.stage == 0 or self.validation_part == 0:
             return {}
 
         x, y, image_paths = batch
@@ -518,26 +518,28 @@ class STAC(pl.LightningModule):
 
     def validation_epoch_end(self, results):
         self.validation_counter += 1
-        if self.stage == 0:
+        if self.stage == 0 or self.validation_part == 0:
             # self.log('val_loss', -self.validation_counter)
-            return {'val_loss': -self.validation_counter}
-        print("computing mAP in validation_end")
-        try:
-            mAP = compute_map()
-        except Exception as e:
-            print("Could not compute mAP")
-            print(e)
-            print("Setting mAP=0")
-            mAP = 0
-        print("\nmAP = {:.3f}\n".format(mAP))
+            val_loss = -self.validation_counter
+        else:
+            print("computing mAP in validation_end")
+            try:
+                mAP = compute_map()
+            except Exception as e:
+                print("Could not compute mAP")
+                print(e)
+                print("Setting mAP=0")
+                mAP = 0
+            print("\nmAP = {:.3f}\n".format(mAP))
 
-        clear_folder('./input/detection-results')
-        clear_folder('./input/ground-truth')
+            clear_folder('./input/detection-results')
+            clear_folder('./input/ground-truth')
 
-        yeet = self.zero_counter
-        self.zero_counter = 0
-#         print(outputs)
-        val_loss = 1 - mAP - self.validation_counter / 1e9
+            yeet = self.zero_counter
+            self.zero_counter = 0
+            val_loss = 1 - mAP - self.validation_counter / 1e9
+            self.log('map', mAP)
+            self.log('images_without_box', yeet)
         print('val_loss: ', val_loss)
         print('best_val_loss: ', self.best_val_loss)
         if self.onTeacher:
@@ -545,8 +547,6 @@ class STAC(pl.LightningModule):
         else:
             self.best_student_val = min(self.best_student_val, val_loss)
         self.best_val_loss = min(self.best_val_loss, val_loss)
-        self.log('map', mAP)
-        self.log('images_without_box', yeet)
         return {
             'val_loss': val_loss
         }
@@ -619,8 +619,9 @@ class STAC(pl.LightningModule):
         self.teacher_trainer.fit(self)
         print("finished teacher")
 
-        self.load_best_teacher()
+        self.load_best_teacher() # TODO I do not think this will always work
 
+        # if False:
         if self.stage != 7:
             for param in self.teacher.parameters():
                 param.requires_grad = False

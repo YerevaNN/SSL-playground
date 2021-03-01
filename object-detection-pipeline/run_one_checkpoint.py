@@ -100,7 +100,7 @@ if __name__ == "__main__":
                 if cur_val_loss < base_checkpoint_val_loss:
                     base_checkpoint_val_loss = cur_val_loss
                     print("Saving to best_base_checkpoint")
-                    # model.save_checkpoint(best_base_checkpoint_filename) TODO
+                    # model.save_checkpoint(best_base_checkpoint_filename) # TODO
 
     print(json.dumps(loss_dict, indent=True))
     print('I chose {} with loss={}'.format(best_version_name, best_val_loss))
@@ -111,6 +111,6 @@ if __name__ == "__main__":
     best_model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path, label_root)
     eps = 1e-10
     best_model.set_test_with_student(True)
-    if best_student_loss - eps > best_teacher_loss or args.stage == 7:
-        best_model.set_test_with_student(False)
+    # if best_student_loss - eps > best_teacher_loss or args.stage == 7: # TODO
+    #     best_model.set_test_with_student(False)
     best_model.test_from_best_checkpoint()
