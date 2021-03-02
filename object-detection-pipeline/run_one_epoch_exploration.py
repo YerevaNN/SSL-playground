@@ -43,6 +43,8 @@ if __name__ == "__main__":
         num_labeled = len(f.readlines())
 
     hparams['output_csv'] = args.output_csv
+    hparams['min_epochs'] = hparams['total_steps']
+    hparams['max_epochs'] = hparams['total_steps']
     hparams['class_num'] = args.class_num
     hparams['stage'] = args.stage
 

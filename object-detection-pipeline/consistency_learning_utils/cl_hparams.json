@@ -1,6 +1,6 @@
 {
-    "experiment_name": "stac_3",
-    "version_name": "stac_3",
+    "experiment_name": "stac_7",
+    "version_name": "stac_7",
 
     "dataset": "voc2007",
     "data_path": ".",
@@ -21,11 +21,11 @@
     "max_epochs": 500,
 
     "learning_rate": 0.02,
-    "gradient_clip_threshold": 0.2,
+    "gradient_clip_threshold": 0.001,
     "min_lr_ratio": 0.004,
 
-    "num_warmup_steps": 2,
-    "total_steps": 5,
+    "num_warmup_steps": 250,
+    "total_steps": 8005,
 
     "num_labelled_samples": 220,
     "consistency_lambda": 2,

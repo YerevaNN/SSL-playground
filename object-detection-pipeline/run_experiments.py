@@ -22,8 +22,8 @@ def main(_):
     phases = ['base', 'adaption']
     for phase in phases:
         dataset_name = task['session']['Session_Status']['current_dataset']['name']
-        TRAIN_DATASET_PATH = '/lwll/evaluation/{}/{}_full/train'.format(dataset_name, dataset_name)
-        TEST_DATASET_PATH = '/lwll/evaluation/{}/{}_full/test'.format(dataset_name, dataset_name)
+        TRAIN_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/train'.format(dataset_name, dataset_name)
+        TEST_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/test'.format(dataset_name, dataset_name)
         #         TRAIN_DATASET_PATH = '/lwll/development/{}/{}_full/train'.format(dataset_name, dataset_name)
         #         TEST_DATASET_PATH = '/lwll/development/{}/{}_full/test'.format(dataset_name, dataset_name)
 
@@ -73,11 +73,8 @@ def main(_):
 
             requested_runs = 0
             print('Querying for Labels')
-            if stage == 0:
+            if stage < 4:
                 label_response = loop.get_json('seed_labels', session_token=task['session_token'])
-                new_labels = label_response['Labels']
-            elif stage == 1:
-                label_response = loop.get_json('secondary_seed_labels', session_token=task['session_token'])
                 new_labels = label_response['Labels']
             else:
                 new_labels = []

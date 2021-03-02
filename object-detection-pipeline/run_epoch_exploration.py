@@ -22,10 +22,10 @@ def main(_):
     phases = ['base', 'adaption']
     for phase in phases:
         dataset_name = task['session']['Session_Status']['current_dataset']['name']
-        TRAIN_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/train'.format(dataset_name, dataset_name)
-        TEST_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/test'.format(dataset_name, dataset_name)
-        #         TRAIN_DATASET_PATH = '/lwll/development/{}/{}_full/train'.format(dataset_name, dataset_name)
-        #         TEST_DATASET_PATH = '/lwll/development/{}/{}_full/test'.format(dataset_name, dataset_name)
+        # TRAIN_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/train'.format(dataset_name, dataset_name)
+        # TEST_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/test'.format(dataset_name, dataset_name)
+        TRAIN_DATASET_PATH = '/lwll/evaluation/{}/{}_full/train'.format(dataset_name, dataset_name)
+        TEST_DATASET_PATH = '/lwll/evaluation/{}/{}_full/test'.format(dataset_name, dataset_name)
 
         training_classes = task['session']['Session_Status']['current_dataset']['classes']
         class_name_to_id = {}
@@ -73,11 +73,8 @@ def main(_):
 
             requested_runs = 0
             print('Querying for Labels')
-            if stage == 0:
+            if stage < 4:
                 label_response = loop.get_json('seed_labels', session_token=task['session_token'])
-                new_labels = label_response['Labels']
-            elif stage == 10:
-                label_response = loop.get_json('secondary_seed_labels', session_token=task['session_token'])
                 new_labels = label_response['Labels']
             else:
                 new_labels = []
@@ -201,7 +198,7 @@ def main(_):
             
             ckpt_id = ckpt_id * 500 - 1
 
-            ckpt_path = '/home/khazhak/SSL-playground/object-detection-pipeline/checkpoints_teacher/stac_0_fasterrcnn/version_stac_0/epoch={}.ckpt'.format(ckpt_id)
+            ckpt_path = '/home/ubuntu/SSL-playground/object-detection-pipeline/checkpoints_teacher/stac_7_fasterrcnn/version_stac_7/epoch={}.ckpt'.format(ckpt_id)
 
             cmd = 'python run_one_epoch_exploration.py --output_csv {} --session_id {} --dataset_name {} --phase {} --stage {} --class_num {} --ckpt_path {}'.format(output_csv, task['session_token'], task['session']['Session_Status']['current_dataset']['name'], phase, stage, len(class_id_to_name.keys()), ckpt_path)
             print("Starting: {}".format(cmd))

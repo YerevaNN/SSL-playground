@@ -266,8 +266,8 @@ class STAC(pl.LightningModule):
             filename='{epoch}',
             verbose=True,
             # save_last=True,
-            save_top_k=1,
-            period=1
+            save_top_k=100,
+            period=500
         )
         tt_logger = TestTubeLogger(
             save_dir="logs",
@@ -303,9 +303,9 @@ class STAC(pl.LightningModule):
             dirpath=self.save_dir_name_student,
             verbose=True,
             filename='{epoch}',
-            save_top_k=1,
+            save_top_k=100,
             # save_last=True,
-            period=1
+            period=500
         )
         tt_logger = TestTubeLogger(
             save_dir="student_logs",
@@ -619,20 +619,20 @@ class STAC(pl.LightningModule):
         self.teacher_trainer.fit(self)
         print("finished teacher")
 
-        self.load_best_teacher() # TODO I do not think this will always work
+        # self.load_best_teacher() # TODO I do not think this will always work
 
-        # if False:
-        if self.stage != 7:
-            for param in self.teacher.parameters():
-                param.requires_grad = False
-            self.validation_counter = 0
-            self.onTeacher = False
+        # # if False:
+        # if self.stage != 7:
+        #     for param in self.teacher.parameters():
+        #         param.requires_grad = False
+        #     self.validation_counter = 0
+        #     self.onTeacher = False
 
-            print("starting student")
-            self.student_trainer.fit(self)
-            print("finished student")
+        #     print("starting student")
+        #     self.student_trainer.fit(self)
+        #     print("finished student")
 
-        # self.best_student_val = 1000000
+        self.best_student_val = 1000000
         print('teacher loss: ', self.best_teacher_val)
         print('student loss: ', self.best_student_val)
 

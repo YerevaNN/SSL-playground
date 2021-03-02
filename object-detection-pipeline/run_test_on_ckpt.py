@@ -73,11 +73,8 @@ def main(_):
 
             requested_runs = 0
             print('Querying for Labels')
-            if stage == 0:
+            if stage < 4:
                 label_response = loop.get_json('seed_labels', session_token=task['session_token'])
-                new_labels = label_response['Labels']
-            elif stage == 1:
-                label_response = loop.get_json('secondary_seed_labels', session_token=task['session_token'])
                 new_labels = label_response['Labels']
             else:
                 new_labels = []
