@@ -137,15 +137,21 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
     if stage == 7:
        train_unlabelled_ds = train_labelled_ds 
 
+    weak_augment_transform = Compose ([
+        ToTensor()
+    ])
+
     strong_augment_transform = Compose([
         ToPILImage(),
         autoaugment.CIFAR10Policy(),
         ToTensor()
     ])
+
     no_transform = Compose([
         ToTensor()
     ])
-    train_labelled_ds = TransformedDataset(train_labelled_ds, transform_fn=lambda dp: (strong_augment_transform(dp[0]), dp[1], dp[2]),
+
+    train_labelled_ds = TransformedDataset(train_labelled_ds, transform_fn=lambda dp: (weak_augment_transform(dp[0]), dp[1], dp[2]),
                                            shuffle=True, shuffle_seed=1)
     val_ds = TransformedDataset(val_ds, transform_fn=lambda dp: (no_transform(dp[0]), dp[1], dp[2]),
                                 shuffle=False, shuffle_seed=1)

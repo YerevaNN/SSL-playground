@@ -21,11 +21,11 @@
     "max_epochs": 500,
 
     "learning_rate": 0.02,
-    "gradient_clip_threshold": 0.2,
+    "gradient_clip_threshold": 0.5,
     "min_lr_ratio": 0.004,
 
-    "num_warmup_steps": 150,
-    "total_steps": 3000,
+    "num_warmup_steps": 1,
+    "total_steps": 10,
 
     "num_labelled_samples": 220,
     "consistency_lambda": 2,
