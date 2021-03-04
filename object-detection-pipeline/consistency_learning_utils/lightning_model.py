@@ -213,6 +213,13 @@ class STAC(pl.LightningModule):
         actual_dict = {k[8:]: v for k, v in best_dict['state_dict'].items() if k.startswith('teacher')}
         self.teacher.load_state_dict(actual_dict)
 
+    def copy_student_from_best_teacher(self):
+        checkpoint_name = os.listdir(self.save_dir_name_teacher)[0]
+        checkpoint_path = os.path.join(self.save_dir_name_teacher, checkpoint_name)
+        best_dict = torch.load(checkpoint_path)
+        actual_dict = {k[8:]: v for k, v in best_dict['state_dict'].items() if k.startswith('teacher')}
+        self.student.load_state_dict(actual_dict)
+
     def load_checkpoint_teacher(self, checkpoint_path):
         checkpoint = torch.load(checkpoint_path)
         actual_dict = {k[8:]: v for k, v in checkpoint['state_dict'].items() if k.startswith('teacher')}
@@ -266,8 +273,8 @@ class STAC(pl.LightningModule):
             filename='{epoch}',
             verbose=True,
             # save_last=True,
-            save_top_k=100,
-            period=500
+            save_top_k=1,
+            period=1
         )
         tt_logger = TestTubeLogger(
             save_dir="logs",
@@ -303,9 +310,9 @@ class STAC(pl.LightningModule):
             dirpath=self.save_dir_name_student,
             verbose=True,
             filename='{epoch}',
-            save_top_k=100,
+            save_top_k=1,
             # save_last=True,
-            period=500
+            period=1
         )
         tt_logger = TestTubeLogger(
             save_dir="student_logs",
@@ -619,20 +626,20 @@ class STAC(pl.LightningModule):
         self.teacher_trainer.fit(self)
         print("finished teacher")
 
-        # self.load_best_teacher() # TODO I do not think this will always work
+        self.load_best_teacher() # TODO I do not think this will always work
 
-        # # if False:
-        # if self.stage != 7:
-        #     for param in self.teacher.parameters():
-        #         param.requires_grad = False
-        #     self.validation_counter = 0
-        #     self.onTeacher = False
+        # if False:
+        if self.stage != 7:
+            self.copy_student_from_best_teacher()
+            for param in self.teacher.parameters():
+                param.requires_grad = False
+            self.validation_counter = 0
+            self.onTeacher = False
 
-        #     print("starting student")
-        #     self.student_trainer.fit(self)
-        #     print("finished student")
+            print("starting student")
+            self.student_trainer.fit(self)
+            print("finished student")
 
-        self.best_student_val = 1000000
         print('teacher loss: ', self.best_teacher_val)
         print('student loss: ', self.best_student_val)
 

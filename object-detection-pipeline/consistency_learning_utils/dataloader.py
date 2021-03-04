@@ -121,14 +121,6 @@ def voc_collate_fn(batch):
 def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file_path, label_root, batch_size,
                            num_workers, stage=0, unlabelled_batch_size=None, validation_part=0.2, pin_memory=True):
 
-    # if "cifar" in dataset_name.lower():
-    #     train_ds, test_ds = get_cifar_train_test_datasets(dataset_name, path)
-    # else:
-    #     raise RuntimeError("Unknown dataset '{}'".format(dataset_name))
-
-    #     train_labelled_ds, train_unlabelled_ds = stratified_train_labelled_unlabelled_split(train_ds,
-    #                                                    num_labelled_samples=num_labelled_samples, seed=12)
-
     train_unlabelled_ds = MyDataset(unlabelled_file_path, target_required=False, img_name_required=False)
     test_ds = MyDataset(testing_file_path, target_required=False, img_name_required=True)
     if stage == 0 or validation_part == 0:
@@ -142,33 +134,18 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
         val_ds = MyDataset(labeled_file_path, target_required=True, img_name_required=False,
                            label_root=label_root, end_to_take='back', part_to_take=validation_part)
 
-    # if "cifar" in dataset_name.lower():
-    # train_transform = Compose([
-    #     Pad(4),
-    #     RandomCrop(32, fill=128),
-    #     RandomHorizontalFlip(),
-    #     ToTensor(),
-    #     Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    #     RandomErasing(scale=(0.1, 0.33)),
-    # ])
-
-    # test_transform = Compose([
-    #     ToTensor(),
-    #     Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-    # ])
-
     if stage == 7:
        train_unlabelled_ds = train_labelled_ds 
 
-    augment_transform = Compose([
-        # ToPILImage(),
-        # autoaugment.CIFAR10Policy(), TODO
+    strong_augment_transform = Compose([
+        ToPILImage(),
+        autoaugment.CIFAR10Policy(),
         ToTensor()
     ])
     no_transform = Compose([
         ToTensor()
     ])
-    train_labelled_ds = TransformedDataset(train_labelled_ds, transform_fn=lambda dp: (augment_transform(dp[0]), dp[1], dp[2]),
+    train_labelled_ds = TransformedDataset(train_labelled_ds, transform_fn=lambda dp: (strong_augment_transform(dp[0]), dp[1], dp[2]),
                                            shuffle=True, shuffle_seed=1)
     val_ds = TransformedDataset(val_ds, transform_fn=lambda dp: (no_transform(dp[0]), dp[1], dp[2]),
                                 shuffle=False, shuffle_seed=1)
@@ -178,7 +155,7 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
     train_unlabelled_ds = TransformedDataset(
         train_unlabelled_ds, STACTransform(
             lambda dp: (no_transform(dp[0]), dp[1]),
-            lambda dp: (augment_transform(dp[0]), dp[1])
+            lambda dp: (strong_augment_transform(dp[0]), dp[1])
         ),
         shuffle=True, shuffle_seed=1)
 
@@ -238,8 +215,7 @@ class STACTransform:
             aug_dp = dp[0]
 #         _, label = dp  # no label is available for unlabeled examples!
         tdp1 = self.original_transform(dp[0])
-#         print(aug_dp)
-        tdp2 = self.augmentation_transform(aug_dp) # I've commented this out, because now I do not use Augment()
+        tdp2 = self.augmentation_transform(aug_dp)
         vector = np.zeros(14)  # fake vector
         return (tdp1, None, dp[1]), (tdp2, vector, dp[1])
 

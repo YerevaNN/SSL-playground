@@ -111,6 +111,6 @@ if __name__ == "__main__":
     best_model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path, label_root)
     eps = 1e-10
     best_model.set_test_with_student(True)
-    # if best_student_loss - eps > best_teacher_loss or args.stage == 7: # TODO
-    #     best_model.set_test_with_student(False)
+    if args.stage == 7: #best_student_loss - eps > best_teacher_loss or
+        best_model.set_test_with_student(False)
     best_model.test_from_best_checkpoint()

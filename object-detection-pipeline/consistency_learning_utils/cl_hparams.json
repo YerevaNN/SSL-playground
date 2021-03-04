@@ -1,6 +1,6 @@
 {
-    "experiment_name": "stac_7",
-    "version_name": "stac_7",
+    "experiment_name": "stac_0",
+    "version_name": "stac_0",
 
     "dataset": "voc2007",
     "data_path": ".",
@@ -9,7 +9,7 @@
     "experiment_description": "debugging",
 
     "momentum": 0.9,
-    "weight_decay": 0.0005,
+    "weight_decay": 0,
     "batch_size": 3,
     "unlabelled_batch_size": 3,
     "confidence_treshold": 0.95,
@@ -21,11 +21,11 @@
     "max_epochs": 500,
 
     "learning_rate": 0.02,
-    "gradient_clip_threshold": 0.001,
+    "gradient_clip_threshold": 0.2,
     "min_lr_ratio": 0.004,
 
-    "num_warmup_steps": 250,
-    "total_steps": 8005,
+    "num_warmup_steps": 150,
+    "total_steps": 3000,
 
     "num_labelled_samples": 220,
     "consistency_lambda": 2,
