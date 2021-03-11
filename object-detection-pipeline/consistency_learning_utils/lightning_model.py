@@ -17,6 +17,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.loggers import TestTubeLogger
+from aim.pytorch_lightning import AimLogger
 
 from typing import Dict
 
@@ -138,7 +139,6 @@ class STAC(pl.LightningModule):
         super().__init__()
 
         self.hparams = hparams
-
         self.lr = self.hparams['learning_rate']
         self.stage = self.hparams['stage']
         self.confidence_treshold = self.hparams['confidence_treshold']
@@ -261,8 +261,7 @@ class STAC(pl.LightningModule):
                                          self.hparams['batch_size'],
                                          self.hparams['num_workers'],
                                          stage=self.stage,
-                                         validation_part=self.validation_part,
-                                         unlabelled_batch_size=self.hparams['unlabelled_batch_size'])
+                                         validation_part=self.validation_part)
         self.train_loader, self.test_loader, self.val_loader = loaders
 
     def make_teacher_trainer(self):
@@ -274,7 +273,10 @@ class STAC(pl.LightningModule):
             verbose=True,
             # save_last=True,
             save_top_k=1,
-            period=1
+            period=50
+        )
+        aim_logger = AimLogger(
+            experiment=self.hparams['version_name'] + '_teacher'
         )
         tt_logger = TestTubeLogger(
             save_dir="logs",
@@ -294,14 +296,14 @@ class STAC(pl.LightningModule):
         self.teacher_trainer = Trainer(gpus=-1,
                                   checkpoint_callback=True,
                                   callbacks=[early_stop_callback, self.t_checkpoint_callback],
-                                  logger=tt_logger,
+                                  logger=aim_logger,
                                   progress_bar_refresh_rate=1,
                                   check_val_every_n_epoch=1,
                                   gradient_clip_val=self.hparams['gradient_clip_threshold'],
                                   #  val_check_interval=0.3,
                                   max_epochs=self.hparams['max_epochs'],
                                   min_epochs=self.hparams['min_epochs'],
-                                  log_every_n_steps=1)
+                                  log_every_n_steps=10)
 
     def make_student_trainer(self):
 
@@ -312,7 +314,10 @@ class STAC(pl.LightningModule):
             filename='{epoch}',
             save_top_k=1,
             # save_last=True,
-            period=1
+            period=50
+        )
+        aim_logger = AimLogger(
+            experiment=self.hparams['version_name'] + '_student'
         )
         tt_logger = TestTubeLogger(
             save_dir="student_logs",
@@ -332,14 +337,14 @@ class STAC(pl.LightningModule):
         self.student_trainer = Trainer(gpus=-1,
                                   checkpoint_callback=True,
                                   callbacks=[early_stop_callback, checkpoint_callback],
-                                  logger=tt_logger,
+                                  logger=aim_logger,
                                   progress_bar_refresh_rate=1,
                                   check_val_every_n_epoch=1,
                                   gradient_clip_val=self.hparams['gradient_clip_threshold'],
                                   #  val_check_interval=0.3,
                                   max_epochs=self.hparams['max_epochs'],
                                   min_epochs=self.hparams['min_epochs'],
-                                  log_every_n_steps=1)
+                                  log_every_n_steps=10)
         
 
     def student_forward(self, x, image_paths):
@@ -347,7 +352,7 @@ class STAC(pl.LightningModule):
 
     def teacher_forward(self, x, image_paths):
         return self.teacher.forward(x, image_paths=image_paths)
-    
+
     def forward(self, x, image_paths):
         if self.onTeacher:
             return self.teacher_forward(x, image_paths=image_paths)
@@ -369,7 +374,7 @@ class STAC(pl.LightningModule):
 
         y_hat = self.teacher(x, target, image_paths)
 
-        return self.frcnn_loss(y_hat)
+        return y_hat
 
     def student_supervised_step(self, sup_batch):
         x, y, image_paths = break_batch(sup_batch)
@@ -379,32 +384,22 @@ class STAC(pl.LightningModule):
 #         print('xxxxxx: ', x)
         y_hat = self.student(x, target, image_paths)
 
-        return self.frcnn_loss(y_hat)
+        return y_hat
 
     def student_unsupervised_step(self, unsup_batch):
-        unlabeled, augmented = [], []
+
+        unlabeled_x, unlabeled_image_paths = [], []
+        augmented_x, augmented_image_paths = [], []
+
         for i in unsup_batch:
             unlab, augment = i
-            unlabeled.append(unlab)
-            augmented.append(augment)
-
-        unlab_x = []
-        # unlab_y = []
-        unlab_image_paths = []
-        for i in range(len(unlabeled)):
-            unlab_x.append(unlabeled[i][0][0])
-            unlab_image_paths.append(unlabeled[i][1])
-
-        aug_x = []
-        aug_vec = []
-        aug_image_paths = []
-        for i in range(len(augmented)):
-            aug_x.append(augmented[i][0][0])
-            aug_image_paths.append(augmented[i][1])
-
+            unlabeled_x.append(unlab[0])
+            unlabeled_image_paths.append(unlab[2])
+            augmented_x.append(augment[0])
+            augmented_image_paths.append(augment[2])
 
         self.teacher.eval()
-        unlab_pred = self.teacher_forward(unlab_x, unlab_image_paths)
+        unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
 
         to_train = True
 
@@ -434,7 +429,8 @@ class STAC(pl.LightningModule):
             if len(boxes) == 0:
                 to_train = False
                 break
-
+            if i == 0:
+                self.log('num_of_pseudo_boxes', len(boxes))
             for j, box in enumerate(boxes):
                 target_boxes.append([box[0], box[1], box[2], box[3]])
                 target_labels.append(labels[j])
@@ -444,7 +440,7 @@ class STAC(pl.LightningModule):
             
             target.append({'boxes': tensor_boxes, 'labels': tensor_labels})
         if to_train:
-            augment_pred = self.student(aug_x, target, aug_image_paths)
+            augment_pred = self.student(augmented_x, target, augmented_image_paths)
             unsup_loss = self.frcnn_loss(augment_pred)
         else:
             unsup_loss = 0
@@ -457,26 +453,35 @@ class STAC(pl.LightningModule):
 
         sup_loss = self.teacher_supervised_step(sup_batch)
 
-        loss = sup_loss
-
-        self.log('training_sup_loss', sup_loss)
-        self.log('training_loss', loss)
+        loss = self.frcnn_loss(sup_loss)
+        
+        self.log('loss_classifier', sup_loss['loss_classifier'])
+        self.log('loss_box_reg', sup_loss['loss_box_reg'])
+        self.log('loss_objectness', sup_loss['loss_objectness'])
+        self.log('loss_rpn_box_reg', sup_loss['loss_rpn_box_reg'])
+        self.log('loss_sum', loss)
         return {'loss': loss}
 
     def student_training_step(self, batch_list):
         sup_batch, unsup_batch = batch_list
         self.student.set_is_supervised(True)
 
-        sup_loss = self.student_supervised_step(sup_batch)
+        sup_y_hat = self.student_supervised_step(sup_batch)
         self.student.set_is_supervised(False)
 
         unsup_loss = self.student_unsupervised_step(unsup_batch)
 
+        sup_loss = self.frcnn_loss(sup_y_hat)
         loss = sup_loss + self.lam * unsup_loss
 
+
+        self.log('loss_classifier', sup_y_hat['loss_classifier'])
+        self.log('loss_box_reg', sup_y_hat['loss_box_reg'])
+        self.log('loss_objectness', sup_y_hat['loss_objectness'])
+        self.log('loss_rpn_box_reg', sup_y_hat['loss_rpn_box_reg'])
         self.log('training_sup_loss', sup_loss)
         self.log('training_unsup_loss', unsup_loss)
-        self.log('training_loss', loss)
+        self.log('loss_sum', loss)
         return {'loss': loss}
 
     def training_step(self, batch_list, batch_idx):

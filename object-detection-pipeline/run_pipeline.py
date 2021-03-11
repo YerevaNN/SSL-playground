@@ -203,7 +203,7 @@ def main(_):
             empty_submission = {
                 'id':{
                     0: list(testing_image_metadata.keys())[0]
-                },
+                },      
                 'bbox':{
                     0: '0, 0, 10, 10'
                 },

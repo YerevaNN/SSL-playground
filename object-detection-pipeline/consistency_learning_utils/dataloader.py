@@ -13,12 +13,17 @@ from .helpers import autoaugment
 
 class ConcatDataset(Dataset):
     def __init__(self, *datasets):
+        assert len(datasets) == 2, f'Only concatenation of 2 datasets allowed, {len(datasets)} given'
+        if len(datasets[0]) > len(datasets[1]):
+            datasets[0], datasets[1] = datasets[1], datasets[0]
         self.datasets = datasets
+        self.counter = 0
 
     def __getitem__(self, i):
-        if len(self.datasets) == 1:
-            return tuple((self.datasets[0][i], None))
-        return tuple(d[i] for d in self.datasets)
+        offsset = self.counter // len(self.datasets[0]) * len(self.datasets[0])
+        secondDatasetIndex = (offsset + i) % len(self.datasets[1])
+        self.counter += 1
+        return (self.datasets[0][i], self.datasets[1][secondDatasetIndex])
 
     def __len__(self):
         return min(len(d) for d in self.datasets)
@@ -26,7 +31,6 @@ class ConcatDataset(Dataset):
 class MyDataset(Dataset):
     def __init__(self,
                  file_path: str, target_required: bool = False,
-                 img_name_required: bool = False,
                  label_root: str = None,
                  end_to_take: str = None,
                  part_to_take: float = 0.) -> None:
@@ -34,7 +38,6 @@ class MyDataset(Dataset):
 
         self.file_path = file_path
         self.target_required = target_required
-        self.img_name_required = img_name_required
         self.label_root = label_root
         self.end_to_take = end_to_take
         self.part_to_take = part_to_take
@@ -92,12 +95,9 @@ class MyDataset(Dataset):
         if len(image.shape) == 2:
             image = np.repeat(image[:, :, np.newaxis], 3, axis=2)
         if not self.target_required:
-            if self.img_name_required:
-                image_name = image_name[:-4]  # remove .jpg
-                return image, image_name, img_path
-            else:
-                return image, img_path
-        target = self.__get_target__(image_name, width, height)
+            target = None
+        else:
+            target = self.__get_target__(image_name, width, height)
         return image, target, img_path
 
 
@@ -119,19 +119,17 @@ def voc_collate_fn(batch):
     return result
 
 def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file_path, label_root, batch_size,
-                           num_workers, stage=0, unlabelled_batch_size=None, validation_part=0.2, pin_memory=True):
+                           num_workers, stage=0, validation_part=0.2, pin_memory=True):
 
-    train_unlabelled_ds = MyDataset(unlabelled_file_path, target_required=False, img_name_required=False)
-    test_ds = MyDataset(testing_file_path, target_required=False, img_name_required=True)
+    train_unlabelled_ds = MyDataset(unlabelled_file_path, target_required=False)
+    test_ds = MyDataset(testing_file_path, target_required=False)
     if stage == 0 or validation_part == 0:
-        train_labelled_ds = MyDataset(labeled_file_path, target_required=True, img_name_required=False,
-                                      label_root=label_root)
-        val_ds = MyDataset(labeled_file_path, target_required=True, img_name_required=False,
-                           label_root=label_root)
+        train_labelled_ds = MyDataset(labeled_file_path, target_required=True, label_root=label_root)
+        val_ds = MyDataset(labeled_file_path, target_required=True, label_root=label_root)
     else:
-        train_labelled_ds = MyDataset(labeled_file_path, target_required=True, img_name_required=False,
-                                      label_root=label_root, end_to_take='front', part_to_take=1-validation_part)
-        val_ds = MyDataset(labeled_file_path, target_required=True, img_name_required=False,
+        train_labelled_ds = MyDataset(labeled_file_path, target_required=True, label_root=label_root,
+                                      end_to_take='front', part_to_take=1-validation_part)
+        val_ds = MyDataset(labeled_file_path, target_required=True,
                            label_root=label_root, end_to_take='back', part_to_take=validation_part)
 
     if stage == 7:
@@ -142,8 +140,8 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
     ])
 
     strong_augment_transform = Compose([
-        ToPILImage(),
-        autoaugment.CIFAR10Policy(),
+        # ToPILImage(),
+        # autoaugment.CIFAR10Policy(),
         ToTensor()
     ])
 
@@ -160,13 +158,10 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
 
     train_unlabelled_ds = TransformedDataset(
         train_unlabelled_ds, STACTransform(
-            lambda dp: (no_transform(dp[0]), dp[1]),
-            lambda dp: (strong_augment_transform(dp[0]), dp[1])
+            lambda dp: (weak_augment_transform(dp[0]), dp[1], dp[2]),
+            lambda dp: (strong_augment_transform(dp[0]), dp[1], dp[2])
         ),
         shuffle=True, shuffle_seed=1)
-
-    if unlabelled_batch_size is None:
-        unlabelled_batch_size = batch_size
 
     train_dataset = ConcatDataset(train_labelled_ds, train_unlabelled_ds)
 
@@ -216,22 +211,11 @@ class STACTransform:
 
     def __call__(self, dp):
         if self.copy:
-            aug_dp = dp[0].copy()
+            aug_dp = dp + tuple() # copies the tuple
         else:
-            aug_dp = dp[0]
+            aug_dp = dp
 #         _, label = dp  # no label is available for unlabeled examples!
-        tdp1 = self.original_transform(dp[0])
+        tdp1 = self.original_transform(dp)
         tdp2 = self.augmentation_transform(aug_dp)
-        vector = np.zeros(14)  # fake vector
-        return (tdp1, None, dp[1]), (tdp2, vector, dp[1])
-
-
-class CombineDataset(Dataset):
-    def __init__(self, *datasets):
-        self.datasets = datasets
-
-    def __getitem__(self, i):
-        return tuple(d[i] for d in self.datasets)
-
-    def __len__(self):
-        return min(len(d) for d in self.datasets)
+        # vector = np.zeros(14)  # fake vector
+        return tdp1, tdp2
