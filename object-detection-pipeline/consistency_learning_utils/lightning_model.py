@@ -254,12 +254,13 @@ class STAC(pl.LightningModule):
         self.test_from_checkpoint(checkpoint_path)
 
     def set_datasets(self, labeled_file_path, unlabeled_file_path, testing_file_path,
-                     external_val_file_path, label_root):
+                     external_val_file_path, external_val_label_root, label_root):
 
         loaders = get_train_test_loaders(labeled_file_path,
                                          unlabeled_file_path,
                                          testing_file_path,
                                          external_val_file_path,
+                                         external_val_label_root,
                                          label_root,
                                          self.hparams['batch_size'],
                                          self.hparams['num_workers'],
@@ -301,7 +302,7 @@ class STAC(pl.LightningModule):
                                   callbacks=[early_stop_callback, self.t_checkpoint_callback],
                                   logger=aim_logger,
                                   progress_bar_refresh_rate=1,
-                                  check_val_every_n_epoch=10,
+                                  check_val_every_n_epoch=1,
                                   gradient_clip_val=self.hparams['gradient_clip_threshold'],
                                   #  val_check_interval=0.3,
                                   max_epochs=self.hparams['max_epochs'],
@@ -342,7 +343,7 @@ class STAC(pl.LightningModule):
                                   callbacks=[early_stop_callback, checkpoint_callback],
                                   logger=aim_logger,
                                   progress_bar_refresh_rate=1,
-                                  check_val_every_n_epoch=10,
+                                  check_val_every_n_epoch=1,
                                   gradient_clip_val=self.hparams['gradient_clip_threshold'],
                                   #  val_check_interval=0.3,
                                   max_epochs=self.hparams['max_epochs'],

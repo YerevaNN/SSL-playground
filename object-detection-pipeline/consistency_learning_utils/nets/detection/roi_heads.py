@@ -497,12 +497,13 @@ class RoIHeads(torch.nn.Module):
             boxes = boxes[:, 1:]
             scores = scores[:, 1:]
             labels = labels[:, 1:]
-            # logits = logits[:, 1:] # ??
+            logits = logits[:, 1:]
 
             # batch everything, by making every class prediction be a separate instance
             boxes = boxes.reshape(-1, 4)
             scores = scores.flatten()
             labels = labels.flatten()
+            logits = logits.flatten()
 
 
             # remove low scoring boxes

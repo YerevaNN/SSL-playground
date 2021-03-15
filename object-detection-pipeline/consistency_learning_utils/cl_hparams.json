@@ -14,7 +14,7 @@
     "batch_size": 3,
     "confidence_treshold": 0.9,
     "validation_part": 0,
-    "num_workers": 8,
+    "num_workers": 1,
 
     "patience_epochs": 3,
     "min_epochs": 100,
