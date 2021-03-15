@@ -1,6 +1,6 @@
 {
-    "experiment_name": "stac_14",
-    "version_name": "stac_14",
+    "experiment_name": "stac_15",
+    "version_name": "stac_15",
 
     "dataset": "voc2007",
     "data_path": ".",
@@ -12,7 +12,7 @@
     "seed": 47,
     "weight_decay": 0,
     "batch_size": 3,
-    "confidence_treshold": 0.95,
+    "confidence_treshold": 0.9,
     "validation_part": 0,
     "num_workers": 8,
 

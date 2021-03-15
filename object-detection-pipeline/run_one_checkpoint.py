@@ -22,6 +22,8 @@ args = parser.parse_args()
 training_dataset_name = "api_dataset_train"
 labeled_file_path = './session_data/{}/{}/train_{}.txt'.format(args.session_id, args.phase, args.stage)
 unlabeled_file_path = './session_data/{}/{}/train_unlabeled_{}.txt'.format(args.session_id, args.phase, args.stage)
+external_val_file_path = '/home/khazhak/lwll_datasets/development/{}/{}_full/val.txt'.format(args.dataset_name, args.dataset_name)
+external_val_label_root = '/home/khazhak/lwll_datasets/development/{}/{}_full/val_labels'.format(args.dataset_name, args.dataset_name)
 label_root = './session_data/{}/{}/labels'.format(args.session_id, args.phase)
 class_names = [i for i in range(args.class_num)]
 class_names_str = []
@@ -81,7 +83,8 @@ if __name__ == "__main__":
             hparams['version_name'] = '{}_{}_{}_{}_{}_'.format(args.dataset_name, args.phase, args.stage, initialization, experiment_id) + start_version_name
 
             model = STAC(argparse.Namespace(**hparams))
-            model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path, label_root)
+            model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
+                               external_val_file_path, external_val_label_root, label_root)
 
             if initialization == 'from_base':
                 if os.path.exists(best_base_checkpoint_filename):

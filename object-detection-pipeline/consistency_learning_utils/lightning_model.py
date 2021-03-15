@@ -142,10 +142,11 @@ class STAC(pl.LightningModule):
         self.lr = self.hparams['learning_rate']
         self.stage = self.hparams['stage']
         self.confidence_treshold = self.hparams['confidence_treshold']
-        self.zero_counter = 0
         self.last_unsupervised_loss = 0
         self.training_map = 1
         self.best_teacher_val = 1000
+        self.total_num_pseudo_boxes = 0
+        self.total_num_images = 0
         self.best_student_val = 1000
         self.best_val_loss = 10000000
         self.validation_counter = 0
@@ -252,11 +253,13 @@ class STAC(pl.LightningModule):
             checkpoint_path = os.path.join(self.save_dir_name_teacher, checkpoint_name)
         self.test_from_checkpoint(checkpoint_path)
 
+    def set_datasets(self, labeled_file_path, unlabeled_file_path, testing_file_path,
+                     external_val_file_path, label_root):
 
-    def set_datasets(self, labeled_file_path, unlabeled_file_path, testing_file_path, label_root):
         loaders = get_train_test_loaders(labeled_file_path,
                                          unlabeled_file_path,
                                          testing_file_path,
+                                         external_val_file_path,
                                          label_root,
                                          self.hparams['batch_size'],
                                          self.hparams['num_workers'],
@@ -298,12 +301,12 @@ class STAC(pl.LightningModule):
                                   callbacks=[early_stop_callback, self.t_checkpoint_callback],
                                   logger=aim_logger,
                                   progress_bar_refresh_rate=1,
-                                  check_val_every_n_epoch=1,
+                                  check_val_every_n_epoch=10,
                                   gradient_clip_val=self.hparams['gradient_clip_threshold'],
                                   #  val_check_interval=0.3,
                                   max_epochs=self.hparams['max_epochs'],
                                   min_epochs=self.hparams['min_epochs'],
-                                  log_every_n_steps=10)
+                                  log_every_n_steps=5)
 
     def make_student_trainer(self):
 
@@ -339,12 +342,12 @@ class STAC(pl.LightningModule):
                                   callbacks=[early_stop_callback, checkpoint_callback],
                                   logger=aim_logger,
                                   progress_bar_refresh_rate=1,
-                                  check_val_every_n_epoch=1,
+                                  check_val_every_n_epoch=10,
                                   gradient_clip_val=self.hparams['gradient_clip_threshold'],
                                   #  val_check_interval=0.3,
                                   max_epochs=self.hparams['max_epochs'],
                                   min_epochs=self.hparams['min_epochs'],
-                                  log_every_n_steps=10)
+                                  log_every_n_steps=5)
         
 
     def student_forward(self, x, image_paths):
@@ -416,7 +419,8 @@ class STAC(pl.LightningModule):
             for j in range(len(labels)):
                 if scores[j] < self.confidence_treshold:
                     index.append(j)
-
+            self.total_num_images += 1
+            self.total_num_pseudo_boxes += len(boxes)
             if len(boxes) != 0 and len(index) == len(boxes):
                 del(index[0])
 
@@ -429,8 +433,6 @@ class STAC(pl.LightningModule):
             if len(boxes) == 0:
                 to_train = False
                 break
-            if i == 0:
-                self.log('num_of_pseudo_boxes', len(boxes))
             for j, box in enumerate(boxes):
                 target_boxes.append([box[0], box[1], box[2], box[3]])
                 target_labels.append(labels[j])
@@ -444,6 +446,8 @@ class STAC(pl.LightningModule):
             unsup_loss = self.frcnn_loss(augment_pred)
         else:
             unsup_loss = 0
+        
+        self.log('avg_pseudo_boxes', self.total_num_pseudo_boxes / self.total_num_images)
 
         return unsup_loss
 
@@ -499,8 +503,8 @@ class STAC(pl.LightningModule):
         return self.val_loader
 
     def validation_step(self, batch, batch_idx):
-        if self.stage == 0 or self.validation_part == 0:
-            return {}
+        # if self.stage == 0 or self.validation_part == 0:
+        #     return {}
 
         x, y, image_paths = batch
         
@@ -515,7 +519,6 @@ class STAC(pl.LightningModule):
             for (j, box) in enumerate(boxes):
                 add_to_preditcion(img_id, box[0], box[1], box[2], box[3], labels[j], scores[j])
             if len(boxes) == 0:
-                self.zero_counter += 1
                 f = open('./input/detection-results/' + str(img_id) + '.txt','a+')
                 f.close()
 
@@ -530,28 +533,25 @@ class STAC(pl.LightningModule):
 
     def validation_epoch_end(self, results):
         self.validation_counter += 1
-        if self.stage == 0 or self.validation_part == 0:
-            # self.log('val_loss', -self.validation_counter)
-            val_loss = -self.validation_counter
-        else:
-            print("computing mAP in validation_end")
-            try:
-                mAP = compute_map()
-            except Exception as e:
-                print("Could not compute mAP")
-                print(e)
-                print("Setting mAP=0")
-                mAP = 0
-            print("\nmAP = {:.3f}\n".format(mAP))
+        # if self.stage == 0 or self.validation_part == 0:
+        #     # self.log('val_loss', -self.validation_counter)
+        #     val_loss = -self.validation_counter
+        # else:
+        print("computing mAP in validation_end")
+        try:
+            mAP = compute_map()
+        except Exception as e:
+            print("Could not compute mAP")
+            print(e)
+            print("Setting mAP=0")
+            mAP = 0
+        print("\nmAP = {:.3f}\n".format(mAP))
 
-            clear_folder('./input/detection-results')
-            clear_folder('./input/ground-truth')
+        clear_folder('./input/detection-results')
+        clear_folder('./input/ground-truth')
 
-            yeet = self.zero_counter
-            self.zero_counter = 0
-            val_loss = 1 - mAP - self.validation_counter / 1e9
-            self.log('map', mAP)
-            self.log('images_without_box', yeet)
+        val_loss = 1 - mAP
+        self.log('map', mAP)
         print('val_loss: ', val_loss)
         print('best_val_loss: ', self.best_val_loss)
         if self.onTeacher:
@@ -564,8 +564,13 @@ class STAC(pl.LightningModule):
         }
 
     def test_step(self, batch, batch_idx):
-        x, names, image_paths = batch
-        
+        x, target, image_paths = batch
+        names = []
+        for image_path in image_paths:
+            name = image_path.split('/')[-1]
+            name = name[:-4]
+            names.append(name)
+        # print(names)
         if self.testWithStudent:
             y_hat = self.student_forward(x, image_paths)
         else:
@@ -576,6 +581,10 @@ class STAC(pl.LightningModule):
             boxes = y_hat[i]['boxes'].cpu().numpy()  # x_min, y_min, x_max, y_max
             labels = y_hat[i]['labels'].cpu().numpy()
             scores = y_hat[i]['scores'].cpu().numpy()
+            # print(img_id)
+            # print(boxes)
+            # print(labels)
+            # print(scores)
             for j, box in enumerate(boxes):
                 row = [img_id, scores[j], labels[j], ','.join(["{:.0f}".format(t) for t in box])]
                 rows.append(row)
