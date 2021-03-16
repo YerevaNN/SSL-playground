@@ -23,6 +23,8 @@ training_dataset_name = "api_dataset_train"
 labeled_file_path = './session_data/{}/{}/train_{}.txt'.format(args.session_id, args.phase, args.stage)
 unlabeled_file_path = './session_data/{}/{}/train_unlabeled_{}.txt'.format(args.session_id, args.phase, args.stage)
 label_root = './session_data/{}/{}/labels'.format(args.session_id, args.phase)
+external_val_file_path = '/lwll/external/{}/validation.txt'.format(args.dataset_name)
+external_val_label_root = '/lwll/external/{}/validation_labels'.format(args.dataset_name)
 
 class_names = [i for i in range(args.class_num)]
 class_names_str = []
@@ -53,11 +55,13 @@ if __name__ == "__main__":
 
     if args.phase == 'base' and args.stage == 0:
         model = STAC(argparse.Namespace(**hparams))
-        model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path, label_root)
+        model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
+                           external_val_file_path, external_val_label_root, label_root)
         teacher_loss, student_loss = model.fit_model()
     
     print('Testing with checkpoint: {}'.format(args.ckpt_path))
     model = STAC(argparse.Namespace(**hparams))
-    model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path, label_root)
+    model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
+                       external_val_file_path, external_val_label_root, label_root)
     model.set_test_with_student(False)
     model.test_from_checkpoint(args.ckpt_path)

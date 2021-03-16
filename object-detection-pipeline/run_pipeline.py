@@ -22,10 +22,10 @@ def main(_):
     phases = ['base', 'adaption']
     for phase in phases:
         dataset_name = task['session']['Session_Status']['current_dataset']['name']
-        TRAIN_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/train'.format(dataset_name, dataset_name)
-        TEST_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/test'.format(dataset_name, dataset_name)
-        #         TRAIN_DATASET_PATH = '/lwll/development/{}/{}_full/train'.format(dataset_name, dataset_name)
-        #         TEST_DATASET_PATH = '/lwll/development/{}/{}_full/test'.format(dataset_name, dataset_name)
+        # TRAIN_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/train'.format(dataset_name, dataset_name)
+        # TEST_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/test'.format(dataset_name, dataset_name)
+        TRAIN_DATASET_PATH = '/lwll/evaluation/{}/{}_full/train'.format(dataset_name, dataset_name)
+        TEST_DATASET_PATH = '/lwll/evaluation/{}/{}_full/test'.format(dataset_name, dataset_name)
 
         training_classes = task['session']['Session_Status']['current_dataset']['classes']
         class_name_to_id = {}

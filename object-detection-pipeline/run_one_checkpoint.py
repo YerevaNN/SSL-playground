@@ -25,6 +25,7 @@ unlabeled_file_path = './session_data/{}/{}/train_unlabeled_{}.txt'.format(args.
 external_val_file_path = '/lwll/external/{}/validation.txt'.format(args.dataset_name)
 external_val_label_root = '/lwll/external/{}/validation_labels'.format(args.dataset_name)
 label_root = './session_data/{}/{}/labels'.format(args.session_id, args.phase)
+
 class_names = [i for i in range(args.class_num)]
 class_names_str = []
 for class_name in class_names:

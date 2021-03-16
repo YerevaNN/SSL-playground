@@ -277,7 +277,8 @@ class STAC(pl.LightningModule):
             verbose=True,
             # save_last=True,
             save_top_k=1,
-            period=50
+            period=1000
+            # period=self.hparams['max_epochs']
         )
         aim_logger = AimLogger(
             experiment=self.hparams['version_name'] + '_teacher'
@@ -302,12 +303,12 @@ class STAC(pl.LightningModule):
                                   callbacks=[early_stop_callback, self.t_checkpoint_callback],
                                   logger=aim_logger,
                                   progress_bar_refresh_rate=1,
-                                  check_val_every_n_epoch=1,
+                                  check_val_every_n_epoch=max(1, self.hparams['max_epochs'] // 10),
                                   gradient_clip_val=self.hparams['gradient_clip_threshold'],
                                   #  val_check_interval=0.3,
                                   max_epochs=self.hparams['max_epochs'],
                                   min_epochs=self.hparams['min_epochs'],
-                                  log_every_n_steps=5)
+                                  log_every_n_steps=10)
 
     def make_student_trainer(self):
 
@@ -318,7 +319,8 @@ class STAC(pl.LightningModule):
             filename='{epoch}',
             save_top_k=1,
             # save_last=True,
-            period=50
+            period=1000
+            # period=self.hparams['max_epochs']
         )
         aim_logger = AimLogger(
             experiment=self.hparams['version_name'] + '_student'
@@ -343,12 +345,12 @@ class STAC(pl.LightningModule):
                                   callbacks=[early_stop_callback, checkpoint_callback],
                                   logger=aim_logger,
                                   progress_bar_refresh_rate=1,
-                                  check_val_every_n_epoch=1,
+                                  check_val_every_n_epoch=max(1, self.hparams['max_epochs'] // 10),
                                   gradient_clip_val=self.hparams['gradient_clip_threshold'],
                                   #  val_check_interval=0.3,
                                   max_epochs=self.hparams['max_epochs'],
                                   min_epochs=self.hparams['min_epochs'],
-                                  log_every_n_steps=5)
+                                  log_every_n_steps=10)
         
 
     def student_forward(self, x, image_paths):
@@ -644,16 +646,16 @@ class STAC(pl.LightningModule):
         self.load_best_teacher() # TODO I do not think this will always work
 
         # if False:
-        if self.stage != 7:
-            self.copy_student_from_best_teacher()
-            for param in self.teacher.parameters():
-                param.requires_grad = False
-            self.validation_counter = 0
-            self.onTeacher = False
+        # if self.stage != 7:
+        #     self.copy_student_from_best_teacher()
+        #     for param in self.teacher.parameters():
+        #         param.requires_grad = False
+        #     self.validation_counter = 0
+        #     self.onTeacher = False
 
-            print("starting student")
-            self.student_trainer.fit(self)
-            print("finished student")
+        #     print("starting student")
+        #     self.student_trainer.fit(self)
+        #     print("finished student")
 
         print('teacher loss: ', self.best_teacher_val)
         print('student loss: ', self.best_student_val)

@@ -196,9 +196,9 @@ def main(_):
             if phase == 'adaption':
                 ckpt_id += 8            
             
-            ckpt_id = ckpt_id * 500 - 1
+            ckpt_id = ckpt_id * 1000 - 1
 
-            ckpt_path = '/home/ubuntu/SSL-playground/object-detection-pipeline/checkpoints_teacher/stac_7_fasterrcnn/version_stac_7/epoch={}.ckpt'.format(ckpt_id)
+            ckpt_path = '/home/ubuntu/SSL-playground/object-detection-pipeline/checkpoints_teacher/stac_18_fasterrcnn/version_stac_18/epoch={}.ckpt'.format(ckpt_id)
 
             cmd = 'python run_one_epoch_exploration.py --output_csv {} --session_id {} --dataset_name {} --phase {} --stage {} --class_num {} --ckpt_path {}'.format(output_csv, task['session_token'], task['session']['Session_Status']['current_dataset']['name'], phase, stage, len(class_id_to_name.keys()), ckpt_path)
             print("Starting: {}".format(cmd))
