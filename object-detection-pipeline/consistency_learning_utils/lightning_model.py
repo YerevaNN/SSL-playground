@@ -277,8 +277,7 @@ class STAC(pl.LightningModule):
             verbose=True,
             # save_last=True,
             save_top_k=1,
-            period=1000
-            # period=self.hparams['max_epochs']
+            period=self.hparams['max_epochs']
         )
         aim_logger = AimLogger(
             experiment=self.hparams['version_name'] + '_teacher'
@@ -319,8 +318,7 @@ class STAC(pl.LightningModule):
             filename='{epoch}',
             save_top_k=1,
             # save_last=True,
-            period=1000
-            # period=self.hparams['max_epochs']
+            period=self.hparams['max_epochs']
         )
         aim_logger = AimLogger(
             experiment=self.hparams['version_name'] + '_student'
@@ -555,15 +553,15 @@ class STAC(pl.LightningModule):
 
         val_loss = 1 - mAP
         self.log('map', mAP)
-        print('val_loss: ', val_loss)
-        print('best_val_loss: ', self.best_val_loss)
+        print('mAP: ', 1 - val_loss)
+        print('best_mAP: ', 1 - self.best_val_loss)
         if self.onTeacher:
             self.best_teacher_val = min(self.best_teacher_val, val_loss)
         else:
             self.best_student_val = min(self.best_student_val, val_loss)
         self.best_val_loss = min(self.best_val_loss, val_loss)
         return {
-            'val_loss': val_loss
+            'val_loss': -self.validation_counter
         }
 
     def test_step(self, batch, batch_idx):
@@ -645,17 +643,16 @@ class STAC(pl.LightningModule):
 
         self.load_best_teacher() # TODO I do not think this will always work
 
-        # if False:
-        # if self.stage != 7:
-        #     self.copy_student_from_best_teacher()
-        #     for param in self.teacher.parameters():
-        #         param.requires_grad = False
-        #     self.validation_counter = 0
-        #     self.onTeacher = False
+        if self.stage != 7:
+            self.copy_student_from_best_teacher()
+            for param in self.teacher.parameters():
+                param.requires_grad = False
+            self.validation_counter = 0
+            self.onTeacher = False
 
-        #     print("starting student")
-        #     self.student_trainer.fit(self)
-        #     print("finished student")
+            print("starting student")
+            self.student_trainer.fit(self)
+            print("finished student")
 
         print('teacher loss: ', self.best_teacher_val)
         print('student loss: ', self.best_student_val)
@@ -667,7 +664,7 @@ class STAC(pl.LightningModule):
         f = open(self.output_csv, 'w', newline='')
         self.csvwriter = csv.writer(f)
         self.csvwriter.writerow(headers)
-#         self.student_trainer.test(model=self)
+
         if self.testWithStudent:
             print('testing with student')
             self.student_trainer.test(model=self)

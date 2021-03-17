@@ -1,8 +1,8 @@
 {
-    "experiment_name": "stac_18",
-    "version_name": "stac_18",
+    "experiment_name": "stac_with_validation_0",
+    "version_name": "stac_with_validation_0",
 
-    "dataset": "voc2007",
+    "dataset": "voc2009",
     "data_path": ".",
 
     "model": "fasterrcnn",
@@ -11,7 +11,7 @@
     "momentum": 0.9,
     "seed": 47,
     "weight_decay": 0.0001,
-    "batch_size": 3,
+    "batch_size": 5,
     "confidence_treshold": 0.9,
     "validation_part": 0,
     "num_workers": 8,
@@ -25,7 +25,7 @@
     "min_lr_ratio": 0.004,
 
     "num_warmup_steps": 250,
-    "total_steps": 16005,
+    "total_steps": 2000,
 
     "num_labelled_samples": 220,
     "consistency_lambda": 2,
