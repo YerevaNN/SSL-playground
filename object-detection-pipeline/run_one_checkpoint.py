@@ -51,8 +51,9 @@ if __name__ == "__main__":
     hparams['stage'] = args.stage
 
     batch_per_epoch = int((num_labeled + hparams['batch_size'] - 1) / hparams['batch_size'])
-    hparams['min_epochs'] = max(5, int(hparams['total_steps'] * (args.stage + 1) / batch_per_epoch))
+    hparams['min_epochs'] = max(5, int(hparams['initial_total_steps'] * (args.stage + 1) / batch_per_epoch))
     hparams['max_epochs'] = hparams['min_epochs']
+    hparams['total_steps'] = hparams['max_epochs'] * batch_per_epoch
     hparams['patience_epochs'] = max(5, hparams['min_epochs'] // 2)
 
     print("Will train for {}-{} epochs with {} patience, {} batches/epoch".format(
