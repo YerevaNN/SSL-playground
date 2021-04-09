@@ -178,6 +178,9 @@ class STAC(pl.LightningModule):
         self.student = model_changed_classifier(classifier_type=self.hparams['classifier_type'],
                                             pretrained='True', class_num=self.hparams['class_num'])
 
+        self.teacher.to('cuda')
+        self.student.to('cuda')
+
         self.make_teacher_trainer()
         self.make_student_trainer()
 
@@ -612,15 +615,16 @@ class STAC(pl.LightningModule):
         else:
             lr_scale = 1 - (self.trainer.global_step - self.num_warmup_steps) / self.total_steps
 
+        self.log('lr', lr_scale * self.lr)
+
         for pg in optimizer.param_groups:
             pg['lr'] = lr_scale * self.lr
 
-        if self.trainer.global_step % 100 == 0:
-            print("inside optimizer: {} LR scale={:.5f} @ step={}".format(
+        if self.trainer.global_step % 1 == 0: # TODO
+            print("inside optimizer: {} LR ={:.5f} @ step={}".format(
                 "teacher" if self.onTeacher else "student",
-                lr_scale, self.trainer.global_step
+                lr_scale * self.lr, self.trainer.global_step
             ))
-
         # update params
         optimizer.step(closure=closure)
 

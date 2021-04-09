@@ -120,7 +120,7 @@ def voc_collate_fn(batch):
 
 def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file_path, external_val_file_path,
                            external_val_label_root, label_root, batch_size, num_workers, stage=0,
-                           validation_part=0.2, pin_memory=True):
+                           validation_part=0, pin_memory=True):
 
     train_unlabelled_ds = MyDataset(unlabelled_file_path, target_required=False)
     test_ds = MyDataset(testing_file_path, target_required=False)
