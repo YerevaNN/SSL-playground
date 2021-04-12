@@ -440,7 +440,7 @@ class STAC(pl.LightningModule):
             augment_pred = self.student(augmented_x, target, augmented_image_paths)
             unsup_loss = self.frcnn_loss(augment_pred)
         else:
-            unsup_loss = 0
+            unsup_loss = 0 * augmented_x.new(1).squeeze()
         
         self.logger.experiment.track(self.total_num_pseudo_boxes / self.total_num_images,
                                          name='avg_pseudo_boxes', model=self.onTeacher,
@@ -457,11 +457,11 @@ class STAC(pl.LightningModule):
         loss = self.frcnn_loss(sup_loss)
         self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
                                          model=self.onTeacher, stage=self.stage)
-        self.logger.experiment.track(sup_loss['loss_box_reg'].item(), name='loss_box_reg', 
+        self.logger.experiment.track(sup_loss['loss_box_reg'].item(), name='loss_box_reg',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(sup_loss['loss_objectness'].item(), name='loss_objectness',
                                           model=self.onTeacher, stage=self.stage)
-        self.logger.experiment.track(sup_loss['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg', 
+        self.logger.experiment.track(sup_loss['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(loss.item(), name='loss_sum', model=self.onTeacher, stage=self.stage)
         return {'loss': loss}
@@ -482,17 +482,17 @@ class STAC(pl.LightningModule):
 
         self.logger.experiment.track(sup_y_hat['loss_classifier'].item(), name='loss_classifier',
                                          model=self.onTeacher, stage=self.stage)
-        self.logger.experiment.track(sup_y_hat['loss_box_reg'].item(), name='loss_box_reg', 
+        self.logger.experiment.track(sup_y_hat['loss_box_reg'].item(), name='loss_box_reg',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(sup_y_hat['loss_objectness'].item(), name='loss_objectness',
                                           model=self.onTeacher, stage=self.stage)
-        self.logger.experiment.track(sup_y_hat['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg', 
+        self.logger.experiment.track(sup_y_hat['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
                                          model=self.onTeacher, stage=self.stage)
-        self.logger.experiment.track(sup_loss.item(), name='training_sup_loss', 
+        self.logger.experiment.track(sup_loss.item(), name='training_sup_loss',
                                          model=self.onTeacher, stage=self.stage)
-        self.logger.experiment.track(unsup_loss, name='training_unsup_loss', 
+        self.logger.experiment.track(unsup_loss.item(), name='training_unsup_loss',
                                          model=self.onTeacher, stage=self.stage)
-        self.logger.experiment.track(loss.item(), name='loss_sum', 
+        self.logger.experiment.track(loss.item(), name='loss_sum',
                                          model=self.onTeacher, stage=self.stage)
         return {'loss': loss}
 
@@ -559,8 +559,8 @@ class STAC(pl.LightningModule):
         clear_folder('./input/ground-truth')
 
         val_loss = 1 - mAP
-        
-        self.logger.experiment.track(mAP, name='map', 
+
+        self.logger.experiment.track(mAP, name='map',
                                          model=self.onTeacher, stage=self.stage)
         print('mAP: ', 1 - val_loss)
         print('best_mAP: ', 1 - self.best_val_loss)
