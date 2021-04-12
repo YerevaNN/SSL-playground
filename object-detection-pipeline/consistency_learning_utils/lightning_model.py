@@ -7,8 +7,9 @@ import json
 import torch
 from .nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
 import torch.optim as optim
-from torch import nn
 from torchvision.utils import save_image
+
+from torch import nn
 from pytorch_lightning import Trainer
 
 from .meanAP import compute_map
@@ -18,8 +19,6 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.loggers import TestTubeLogger
 from aim.pytorch_lightning import AimLogger
-
-from typing import Dict
 
 from .dataloader import get_train_test_loaders
 # from .stac_trainer import StacTrainer
@@ -137,6 +136,7 @@ class STAC(pl.LightningModule):
 
     def __init__(self, hparams: Namespace) -> None:
         super().__init__()
+        # pl.seed_everything(2)
 
         self.hparams = hparams
         self.lr = self.hparams['learning_rate']
@@ -178,8 +178,12 @@ class STAC(pl.LightningModule):
         self.student = model_changed_classifier(classifier_type=self.hparams['classifier_type'],
                                             pretrained='True', class_num=self.hparams['class_num'])
 
-        self.teacher.to('cuda')
-        self.student.to('cuda')
+        self.teacher.cuda()
+        self.student.cuda()
+
+        self.aim_logger = AimLogger(
+            experiment=self.hparams['version_name']
+        )
 
         self.make_teacher_trainer()
         self.make_student_trainer()
@@ -223,11 +227,6 @@ class STAC(pl.LightningModule):
         best_dict = torch.load(checkpoint_path)
         actual_dict = {k[8:]: v for k, v in best_dict['state_dict'].items() if k.startswith('teacher')}
         self.student.load_state_dict(actual_dict)
-
-    def load_checkpoint_teacher(self, checkpoint_path):
-        checkpoint = torch.load(checkpoint_path)
-        actual_dict = {k[8:]: v for k, v in checkpoint['state_dict'].items() if k.startswith('teacher')}
-        self.teacher.load_state_dict(actual_dict)
 
     def load_checkpoint_teacher(self, checkpoint_path):
         checkpoint = torch.load(checkpoint_path)
@@ -282,9 +281,6 @@ class STAC(pl.LightningModule):
             save_top_k=1,
             period=self.hparams['max_epochs']
         )
-        aim_logger = AimLogger(
-            experiment=self.hparams['version_name'] + '_teacher'
-        )
         tt_logger = TestTubeLogger(
             save_dir="logs",
             name="{}_{}".format(self.hparams['experiment_name'], self.hparams['model']),
@@ -303,7 +299,7 @@ class STAC(pl.LightningModule):
         self.teacher_trainer = Trainer(gpus=-1,
                                   checkpoint_callback=True,
                                   callbacks=[early_stop_callback, self.t_checkpoint_callback],
-                                  logger=aim_logger,
+                                  logger=self.aim_logger,
                                   progress_bar_refresh_rate=1,
                                   check_val_every_n_epoch=max(1, self.hparams['max_epochs'] // 10),
                                 #   check_val_every_n_epoch=1000,
@@ -324,9 +320,6 @@ class STAC(pl.LightningModule):
             # save_last=True,
             period=self.hparams['max_epochs']
         )
-        aim_logger = AimLogger(
-            experiment=self.hparams['version_name'] + '_student'
-        )
         tt_logger = TestTubeLogger(
             save_dir="student_logs",
             name="{}_{}".format(self.hparams['experiment_name'], self.hparams['model']),
@@ -345,7 +338,7 @@ class STAC(pl.LightningModule):
         self.student_trainer = Trainer(gpus=-1,
                                   checkpoint_callback=True,
                                   callbacks=[early_stop_callback, checkpoint_callback],
-                                  logger=aim_logger,
+                                  logger=self.aim_logger,
                                   progress_bar_refresh_rate=1,
                                 #   check_val_every_n_epoch=1000,
                                   check_val_every_n_epoch=max(1, self.hparams['max_epochs'] // 10),
@@ -389,14 +382,11 @@ class STAC(pl.LightningModule):
         x, y, image_paths = break_batch(sup_batch)
 
         target = make_target_from_y(y)
-        
-#         print('xxxxxx: ', x)
         y_hat = self.student(x, target, image_paths)
 
         return y_hat
 
     def student_unsupervised_step(self, unsup_batch):
-
         unlabeled_x, unlabeled_image_paths = [], []
         augmented_x, augmented_image_paths = [], []
 
@@ -413,7 +403,6 @@ class STAC(pl.LightningModule):
         to_train = True
 
         target = []
-
         for i, sample_pred in enumerate(unlab_pred):
             boxes = sample_pred['boxes'].cpu()
             labels = sample_pred['labels'].cpu()
@@ -453,23 +442,28 @@ class STAC(pl.LightningModule):
         else:
             unsup_loss = 0
         
-        self.log('avg_pseudo_boxes', self.total_num_pseudo_boxes / self.total_num_images)
-
+        self.logger.experiment.track(self.total_num_pseudo_boxes / self.total_num_images,
+                                         name='avg_pseudo_boxes', model=self.onTeacher,
+                                         stage=self.stage)
         return unsup_loss
 
     def teacher_training_step(self, batch_list):
         sup_batch, _ = batch_list
         self.teacher.set_is_supervised(True)
+        # save_image(sup_batch[0][0], 'image1.png')
 
         sup_loss = self.teacher_supervised_step(sup_batch)
 
         loss = self.frcnn_loss(sup_loss)
-        
-        self.log('loss_classifier', sup_loss['loss_classifier'])
-        self.log('loss_box_reg', sup_loss['loss_box_reg'])
-        self.log('loss_objectness', sup_loss['loss_objectness'])
-        self.log('loss_rpn_box_reg', sup_loss['loss_rpn_box_reg'])
-        self.log('loss_sum', loss)
+        self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
+                                         model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(sup_loss['loss_box_reg'].item(), name='loss_box_reg', 
+                                         model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(sup_loss['loss_objectness'].item(), name='loss_objectness',
+                                          model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(sup_loss['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg', 
+                                         model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(loss.item(), name='loss_sum', model=self.onTeacher, stage=self.stage)
         return {'loss': loss}
 
     def student_training_step(self, batch_list):
@@ -477,21 +471,29 @@ class STAC(pl.LightningModule):
         self.student.set_is_supervised(True)
 
         sup_y_hat = self.student_supervised_step(sup_batch)
+
         self.student.set_is_supervised(False)
 
         unsup_loss = self.student_unsupervised_step(unsup_batch)
 
         sup_loss = self.frcnn_loss(sup_y_hat)
+        print(sup_loss, unsup_loss)
         loss = sup_loss + self.lam * unsup_loss
 
-
-        self.log('loss_classifier', sup_y_hat['loss_classifier'])
-        self.log('loss_box_reg', sup_y_hat['loss_box_reg'])
-        self.log('loss_objectness', sup_y_hat['loss_objectness'])
-        self.log('loss_rpn_box_reg', sup_y_hat['loss_rpn_box_reg'])
-        self.log('training_sup_loss', sup_loss)
-        self.log('training_unsup_loss', unsup_loss)
-        self.log('loss_sum', loss)
+        self.logger.experiment.track(sup_y_hat['loss_classifier'].item(), name='loss_classifier',
+                                         model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(sup_y_hat['loss_box_reg'].item(), name='loss_box_reg', 
+                                         model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(sup_y_hat['loss_objectness'].item(), name='loss_objectness',
+                                          model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(sup_y_hat['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg', 
+                                         model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(sup_loss.item(), name='training_sup_loss', 
+                                         model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(unsup_loss, name='training_unsup_loss', 
+                                         model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(loss.item(), name='loss_sum', 
+                                         model=self.onTeacher, stage=self.stage)
         return {'loss': loss}
 
     def training_step(self, batch_list, batch_idx):
@@ -557,7 +559,9 @@ class STAC(pl.LightningModule):
         clear_folder('./input/ground-truth')
 
         val_loss = 1 - mAP
-        self.log('map', mAP)
+        
+        self.logger.experiment.track(mAP, name='map', 
+                                         model=self.onTeacher, stage=self.stage)
         print('mAP: ', 1 - val_loss)
         print('best_mAP: ', 1 - self.best_val_loss)
         if self.onTeacher:
@@ -615,13 +619,15 @@ class STAC(pl.LightningModule):
         else:
             lr_scale = 1 - (self.trainer.global_step - self.num_warmup_steps) / self.total_steps
 
-        self.log('lr', lr_scale * self.lr)
+        self.logger.experiment.track(lr_scale * self.lr, name='lr', 
+                                         model=self.onTeacher, stage=self.stage)
+        
 
         for pg in optimizer.param_groups:
             pg['lr'] = lr_scale * self.lr
 
-        if self.trainer.global_step % 1 == 0: # TODO
-            print("inside optimizer: {} LR ={:.5f} @ step={}".format(
+        if self.trainer.global_step % 1 == 100: # TODO
+            print("\ninside optimizer: {} LR ={:.5f} @ step={}".format(
                 "teacher" if self.onTeacher else "student",
                 lr_scale * self.lr, self.trainer.global_step
             ))
