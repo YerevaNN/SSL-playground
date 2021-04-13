@@ -440,7 +440,7 @@ class STAC(pl.LightningModule):
             augment_pred = self.student(augmented_x, target, augmented_image_paths)
             unsup_loss = self.frcnn_loss(augment_pred)
         else:
-            unsup_loss = 0 * augmented_x.new(1).squeeze()
+            unsup_loss = 0 * augmented_x[0].new(1).squeeze()
         
         self.logger.experiment.track(self.total_num_pseudo_boxes / self.total_num_images,
                                          name='avg_pseudo_boxes', model=self.onTeacher,
