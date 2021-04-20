@@ -177,7 +177,6 @@ class STAC(pl.LightningModule):
         self.weight_decay = self.hparams['weight_decay']
         self.consistency_criterion = self.hparams['consistency_criterion']
         self.testWithStudent = True
-        self.output_csv = self.hparams['output_csv']
 
         self.batches_per_epoch = self.hparams['batches_per_epoch']
         self.check_val_epochs = max(
@@ -185,9 +184,10 @@ class STAC(pl.LightningModule):
 
         self.onTeacher = True  # as opposed to "on student"
 
-        stage_folder = os.path.join(self.hparams['phase_folder'], str(self.stage))
-        self.save_dir_name_teacher = os.path.join(stage_folder, 'teacher')
-        self.save_dir_name_student = os.path.join(stage_folder, 'student')
+        version_folder = os.path.join(self.hparams['phase_folder'], self.hparams['version_name'])
+        self.save_dir_name_teacher = os.path.join(version_folder, 'teacher')
+        self.save_dir_name_student = os.path.join(version_folder, 'student')
+        self.output_csv = os.path.join(version_folder, 'output.csv')
 
         print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
             self.hparams['initialization'], self.hparams['reuse_classifier']

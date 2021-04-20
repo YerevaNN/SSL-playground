@@ -1,10 +1,6 @@
-import new_loop as loop
-import requests
-from tqdm import tqdm
 from pipeline_utils import *
-from PIL import Image
 import os
-import pytorch_lightning as pl
+import shutil
 
 from consistency_learning_utils.lightning_model import STAC
 
@@ -47,7 +43,6 @@ if __name__ == "__main__":
     with open(labeled_file_path) as f:
         num_labeled = len(f.readlines())
 
-    hparams['output_csv'] = args.output_csv
     hparams['class_num'] = args.class_num
     hparams['stage'] = args.stage
     hparams['phase_folder'] = phase_folder
@@ -71,7 +66,9 @@ if __name__ == "__main__":
     initialization_times = {'base': ['from_coco'], 'adaption': ['from_coco']} # TODO
     for initialization in initialization_times[args.phase]:
         for experiment_id in range(attempts):
-            hparams['version_name'] = '{}_{}_{}_{}_{}_'.format(args.dataset_name, args.phase, args.stage, initialization, experiment_id)
+            hparams['version_name'] = '{}_{}_{}_{}_{}_{}'.format(
+                args.dataset_name, args.phase, args.stage, initialization, experiment_id,
+                hparams['experiment_name'])
 
             model = STAC(argparse.Namespace(**hparams))
             model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
@@ -111,3 +108,5 @@ if __name__ == "__main__":
     if args.stage == 7: #best_student_loss - eps > best_teacher_loss or
         best_model.set_test_with_student(False)
     best_model.test_from_best_checkpoint()
+    shutil.copy(best_model.output_csv, args.output_csv)
+
