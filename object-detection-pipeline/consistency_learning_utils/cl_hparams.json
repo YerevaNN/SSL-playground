@@ -6,9 +6,11 @@
     "reuse_classifier": false,
 
     "learning_rate": 0.02,
-    "num_warmup_steps": 250,
-    "initial_total_steps": 500,
-    "total_steps": 500,
+    "total_steps_teacher": 800,
+    "total_steps_student": 800,
+    "check_val_steps": 100,
+    "warmup_steps": 200,
+    "lr_schedule": "constant",
 
     "momentum": 0.9,
     "gradient_clip_threshold": 0.1,

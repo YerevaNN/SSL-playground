@@ -55,12 +55,6 @@ def break_batch(batch):
         paths.append(img[2])
     return x, y, paths
 
-def label_id_to_name(id):
-    if id == '0':
-        return 'car'
-    else:
-        return 'pool'
-
 
 def makeFolder(directory):
     if not os.path.exists(directory):
@@ -176,8 +170,7 @@ class STAC(pl.LightningModule):
         self.best_student_val = 1000
         self.best_val_loss = 10000000
         self.validation_counter = 0
-        self.num_warmup_steps = self.hparams['num_warmup_steps']
-        self.total_steps = self.hparams['total_steps']
+        self.warmup_steps = self.hparams['warmup_steps']
         self.validation_part = self.hparams["validation_part"]
         self.lam = self.hparams['consistency_lambda']
         self.momentum = self.hparams['momentum']
@@ -185,6 +178,10 @@ class STAC(pl.LightningModule):
         self.consistency_criterion = self.hparams['consistency_criterion']
         self.testWithStudent = True
         self.output_csv = self.hparams['output_csv']
+
+        self.batches_per_epoch = self.hparams['batches_per_epoch']
+        self.check_val_epochs = max(
+            1, self.hparams['check_val_steps'] // self.hparams['batches_per_epoch'])
 
         self.onTeacher = True  # as opposed to "on student"
 
@@ -195,6 +192,9 @@ class STAC(pl.LightningModule):
                                                                                                   self.hparams['model'],
                                                                                                   self.hparams['version_name'])
 
+        print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
+            self.hparams['initialization'], self.hparams['reuse_classifier']
+        ))
         self.teacher = model_changed_classifier(
             initialize=self.hparams['initialization'],
             reuse_classifier=self.hparams['reuse_classifier'],
@@ -227,9 +227,6 @@ class STAC(pl.LightningModule):
 
     def set_test_with_student(self, val):
         self.testWithStudent = val
-
-    def print_yeet(self):
-        print('yeeeet')
 
     def save_checkpoint(self, path):
         torch.save(self.student.state_dict(), path)
@@ -299,62 +296,45 @@ class STAC(pl.LightningModule):
 
     def make_teacher_trainer(self):
         self.t_checkpoint_callback = ModelCheckpoint(
-            monitor='val_loss',
+            monitor=None,  # 'val_loss',
             dirpath=self.save_dir_name_teacher,
             filename='{epoch}',
             verbose=True,
-            # save_last=True,
-            save_top_k=1,
-            period=self.hparams['max_epochs']
+            save_last=True,
+            period=1
         )
-        tt_logger = TestTubeLogger(
-            save_dir="logs",
-            name="{}_{}".format(self.hparams['experiment_name'], self.hparams['model']),
-            version=self.hparams['version_name'],
-            debug=False,
-            create_git_tag=False,
+        self.teacher_trainer = Trainer(
+            gpus=-1, checkpoint_callback=True, # what is this?
+            callbacks=[self.t_checkpoint_callback],
+            logger=self.aim_logger,
+            log_every_n_steps=10, progress_bar_refresh_rate=1,
+            gradient_clip_val=self.hparams['gradient_clip_threshold'],
+            min_steps=self.hparams['total_steps_teacher'],
+            max_steps=self.hparams['total_steps_teacher'],
+            check_val_every_n_epoch=self.check_val_epochs,
         )
 
-        self.teacher_trainer = Trainer(gpus=-1,
-                                  checkpoint_callback=True,
-                                  callbacks=[self.t_checkpoint_callback],
-                                  logger=self.aim_logger,
-                                  progress_bar_refresh_rate=1,
-                                  check_val_every_n_epoch=max(1, self.hparams['max_epochs'] // 10),
-                                  gradient_clip_val=self.hparams['gradient_clip_threshold'],
-                                  max_epochs=self.hparams['max_epochs'],
-                                  min_epochs=self.hparams['min_epochs'],
-                                  log_every_n_steps=10)
 
     def make_student_trainer(self):
         checkpoint_callback = ModelCheckpoint(
-            monitor='val_loss',
+            monitor=None,  # 'val_loss',
             dirpath=self.save_dir_name_student,
-            verbose=True,
             filename='{epoch}',
-            save_top_k=1,
-            # save_last=True,
-            period=self.hparams['max_epochs']
-        )
-        tt_logger = TestTubeLogger(
-            save_dir="student_logs",
-            name="{}_{}".format(self.hparams['experiment_name'], self.hparams['model']),
-            version=self.hparams['version_name'],
-            debug=False,
-            create_git_tag=False,
+            verbose=True,
+            save_last=True,
+            period=1
         )
 
-        self.student_trainer = Trainer(gpus=-1,
-                                  checkpoint_callback=True,
-                                  callbacks=[checkpoint_callback],
-                                  logger=self.aim_logger,
-                                  progress_bar_refresh_rate=1,
-                                  check_val_every_n_epoch=max(1, self.hparams['max_epochs'] // 10),
-                                  gradient_clip_val=self.hparams['gradient_clip_threshold'],
-                                  max_epochs=self.hparams['max_epochs'],
-                                  min_epochs=self.hparams['min_epochs'],
-                                  log_every_n_steps=10)
-        
+        self.student_trainer = Trainer(
+            gpus=-1, checkpoint_callback=True, # what is this?
+            callbacks=[checkpoint_callback],
+            logger=self.aim_logger,
+            log_every_n_steps=10, progress_bar_refresh_rate=1,
+            gradient_clip_val=self.hparams['gradient_clip_threshold'],
+            min_steps=self.hparams['total_steps_student'],
+            max_steps=self.hparams['total_steps_student'],
+            check_val_every_n_epoch=self.check_val_epochs,
+        )
 
     def student_forward(self, x, image_paths):
         return self.student.forward(x, image_paths=image_paths)
@@ -370,7 +350,7 @@ class STAC(pl.LightningModule):
     # @pl.data_loader
     def train_dataloader(self):
         return self.train_loader
-    
+
     def frcnn_loss(self, res):
         final_loss = res['loss_classifier'] + 10 * res['loss_box_reg'] + \
                      res['loss_objectness'] + res['loss_rpn_box_reg']
@@ -441,14 +421,14 @@ class STAC(pl.LightningModule):
 
             tensor_boxes = torch.tensor(target_boxes).float().cuda()
             tensor_labels = torch.tensor(target_labels).long().cuda()
-            
+
             target.append({'boxes': tensor_boxes, 'labels': tensor_labels})
         if to_train:
             augment_pred = self.student(augmented_x, target, augmented_image_paths)
             unsup_loss = self.frcnn_loss(augment_pred)
         else:
             unsup_loss = 0 * augmented_x[0].new(1).squeeze()
-        
+
         self.logger.experiment.track(self.total_num_pseudo_boxes / self.total_num_images,
                                          name='avg_pseudo_boxes', model=self.onTeacher,
                                          stage=self.stage)
@@ -522,9 +502,9 @@ class STAC(pl.LightningModule):
         #     return {}
 
         x, y, image_paths = batch
-        
+
         y_hat = self.forward(x, image_paths)
-        
+
         for i in range(len(y_hat)):
             img_id = batch_idx * self.hparams['batch_size'] + i
             boxes = y_hat[i]['boxes'].cpu().numpy()
@@ -618,28 +598,27 @@ class STAC(pl.LightningModule):
         y_hat = y_hat.argmax(dim=-1)
         return torch.sum(y == y_hat).item() / len(y)
 
-    # def optimizer_step(self, current_epoch, batch_nb, optimizer, optimizer_idx, closure, on_tpu=False,
-    #                    using_native_amp=False, using_lbfgs=False):
-    #     # warm up lr
-    #     if self.trainer.global_step < self.num_warmup_steps:
-    #         lr_scale = min(1., float(self.trainer.global_step + 1) / self.num_warmup_steps)
-    #     else:
-    #         lr_scale = 1 - (self.trainer.global_step - self.num_warmup_steps) / self.total_steps
-    #
-    #     self.logger.experiment.track(lr_scale * self.lr, name='lr',
-    #                                      model=self.onTeacher, stage=self.stage)
-    #
-    #
-    #     for pg in optimizer.param_groups:
-    #         pg['lr'] = lr_scale * self.lr
-    #
-    #     if self.trainer.global_step % 1 == 100: # TODO
-    #         print("\ninside optimizer: {} LR ={:.5f} @ step={}".format(
-    #             "teacher" if self.onTeacher else "student",
-    #             lr_scale * self.lr, self.trainer.global_step
-    #         ))
-    #     # update params
-    #     optimizer.step(closure=closure)
+    def optimizer_step(self, epoch: int = None, batch_idx: int = None, optimizer = None,
+                       optimizer_idx: int = None, optimizer_closure = None, on_tpu: bool = None,
+                       using_native_amp: bool = None, using_lbfgs: bool = None):
+        if self.hparams['lr_schedule'] == 'constant':
+            lr_scale = 1.
+        elif self.hparams['lr_schedule'] == 'warmup':
+            if self.trainer.global_step < self.warmup_steps:
+                lr_scale = min(1., float(self.trainer.global_step + 1) / self.warmup_steps)
+            else:
+                lr_scale = 1. # - (self.trainer.global_step - self.num_warmup_steps) / self.total_steps
+        else:
+            raise NotImplementedError
+
+        self.logger.experiment.track(lr_scale, name='lr_scale',
+                                     model=self.onTeacher, stage=self.stage)
+
+        for pg in optimizer.param_groups:
+            pg['lr'] = lr_scale * self.lr
+
+        # update params
+        optimizer.step(closure=optimizer_closure)
 
     def optimizer_zero_grad(self, current_epoch, batch_idx, optimizer, opt_idx):
         optimizer.zero_grad()
@@ -651,12 +630,16 @@ class STAC(pl.LightningModule):
         return optimizer
 
     def fit_model(self):
-        print("starting teacher")
+        print("Starting teacher")
         self.onTeacher = True
+        print("Will train for {} epochs, validate every {} epochs".format(
+            self.hparams['total_steps_teacher'] // self.batches_per_epoch,
+            self.check_val_epochs
+        ))
 
         self.validation_counter = 0
         self.teacher_trainer.fit(self)
-        print("finished teacher")
+        print("Finished teacher")
 
         self.load_best_teacher() # TODO I do not think this will always work
 
