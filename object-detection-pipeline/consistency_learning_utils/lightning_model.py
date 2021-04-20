@@ -24,6 +24,12 @@ from .dataloader import get_train_test_loaders
 # from .stac_trainer import StacTrainer
 
 def make_target_from_y(y):
+    """
+    Converts a list of M objects like
+        [{"label":1, "bndbox":{"xmin":1,"ymin":2,"xmax":3,"ymax":4}}]
+    to an object of lists like
+        {"boxes": cuda tensor (M,4), "labels": cuda tensor (M)}
+    """
     target = []
     for i in range(len(y)):
         target_boxes = []
@@ -89,12 +95,36 @@ class SkipConnection(nn.Module):
         return torch.cat((x, z), dim=-1)
 
 
-def model_changed_classifier(classifier_type='added', pretrained='True', class_num=20):
+def model_changed_classifier(reuse_classifier=False, initialize=False, class_num=20):
+    """
+
+    Args:
+        reuse_classifier:
+            - False: a regular Faster RCNN is used.
+            - Otherwise: take a Faster RCNN and add a new layer on top of:
+                - 'add': the original logits
+                - 'concatenate': the concatenation of original logits and the feature vector
+        initialize: initialization of Faster RCNN
+            - False: random
+            - 'backbone': ImageNet-pretrained ResNet backbone only
+            - 'full': COCO pretrained Faster RCNN
+        class_num: number of foreground classes (the code will add one for background)
+
+    Returns:
+        Initialized model
+    """
+    pretrained = initialize == 'full'
+    backbone = initialize == 'backbone'
+
+    if reuse_classifier is False:
+        model = fasterrcnn_resnet50_fpn(pretrained=pretrained, progress=True,
+                                        num_classes=class_num+1, pretrained_backbone=backbone)
+        return model
 
     model = fasterrcnn_resnet50_fpn(pretrained=pretrained, progress=True,
-                                    num_classes=91, pretrained_backbone=False)
+                                    num_classes=91, pretrained_backbone=backbone)
 
-    if classifier_type == 'added':
+    if reuse_classifier == 'add':
         old_cls_score = model.roi_heads.box_predictor.cls_score
         old_bbox_pred = model.roi_heads.box_predictor.bbox_pred
 
@@ -107,7 +137,7 @@ def model_changed_classifier(classifier_type='added', pretrained='True', class_n
             old_bbox_pred,
             nn.Linear(in_features=364, out_features=4*(class_num+1), bias=True)
         )
-    elif classifier_type == 'concatenated':
+    elif reuse_classifier == 'concatenate':
         old_cls_score = SkipConnection(model.roi_heads.box_predictor.cls_score)
         old_bbox_pred = SkipConnection(model.roi_heads.box_predictor.bbox_pred)
 
@@ -130,10 +160,6 @@ def model_changed_classifier(classifier_type='added', pretrained='True', class_n
 
 
 class STAC(pl.LightningModule):
-
-    def smth(self):
-        self.on_batch_start()
-
     def __init__(self, hparams: Namespace) -> None:
         super().__init__()
         # pl.seed_everything(2)
@@ -141,7 +167,7 @@ class STAC(pl.LightningModule):
         self.hparams = hparams
         self.lr = self.hparams['learning_rate']
         self.stage = self.hparams['stage']
-        self.confidence_treshold = self.hparams['confidence_treshold']
+        self.confidence_threshold = self.hparams['confidence_threshold']
         self.last_unsupervised_loss = 0
         self.training_map = 1
         self.best_teacher_val = 1000
@@ -150,20 +176,17 @@ class STAC(pl.LightningModule):
         self.best_student_val = 1000
         self.best_val_loss = 10000000
         self.validation_counter = 0
-        self.eta_min = self.lr * self.hparams['min_lr_ratio']
         self.num_warmup_steps = self.hparams['num_warmup_steps']
         self.total_steps = self.hparams['total_steps']
-        self.early_stopping_patience = self.hparams['patience_epochs']
-        self.with_SWA = self.hparams['with_SWA']
         self.validation_part = self.hparams["validation_part"]
         self.lam = self.hparams['consistency_lambda']
-        self.max_lam = self.hparams['max_lam']
         self.momentum = self.hparams['momentum']
         self.weight_decay = self.hparams['weight_decay']
         self.consistency_criterion = self.hparams['consistency_criterion']
         self.testWithStudent = True
         self.output_csv = self.hparams['output_csv']
-        self.onTeacher = True
+
+        self.onTeacher = True  # as opposed to "on student"
 
         self.save_dir_name_student = os.getcwd() + "/checkpoints_student/{}_{}/version_{}/".format(self.hparams['experiment_name'],
                                                                                                   self.hparams['model'],
@@ -172,11 +195,15 @@ class STAC(pl.LightningModule):
                                                                                                   self.hparams['model'],
                                                                                                   self.hparams['version_name'])
 
-        self.teacher = model_changed_classifier(classifier_type=self.hparams['classifier_type'],
-                                            pretrained='True', class_num=self.hparams['class_num'])
+        self.teacher = model_changed_classifier(
+            initialize=self.hparams['initialization'],
+            reuse_classifier=self.hparams['reuse_classifier'],
+            class_num=self.hparams['class_num'])
 
-        self.student = model_changed_classifier(classifier_type=self.hparams['classifier_type'],
-                                            pretrained='True', class_num=self.hparams['class_num'])
+        self.student = model_changed_classifier(
+            initialize=self.hparams['initialization'],
+            reuse_classifier=self.hparams['reuse_classifier'],
+            class_num=self.hparams['class_num'])
 
         self.teacher.cuda()
         self.student.cuda()
@@ -271,7 +298,6 @@ class STAC(pl.LightningModule):
         self.train_loader, self.test_loader, self.val_loader = loaders
 
     def make_teacher_trainer(self):
-
         self.t_checkpoint_callback = ModelCheckpoint(
             monitor='val_loss',
             dirpath=self.save_dir_name_teacher,
@@ -288,29 +314,19 @@ class STAC(pl.LightningModule):
             debug=False,
             create_git_tag=False,
         )
-        early_stop_callback = EarlyStopping(
-            monitor='val_loss',
-            min_delta=0.0001,
-            patience=self.early_stopping_patience,
-            verbose=False,
-            mode='min'
-        )
 
         self.teacher_trainer = Trainer(gpus=-1,
                                   checkpoint_callback=True,
-                                  callbacks=[early_stop_callback, self.t_checkpoint_callback],
+                                  callbacks=[self.t_checkpoint_callback],
                                   logger=self.aim_logger,
                                   progress_bar_refresh_rate=1,
                                   check_val_every_n_epoch=max(1, self.hparams['max_epochs'] // 10),
-                                #   check_val_every_n_epoch=1000,
                                   gradient_clip_val=self.hparams['gradient_clip_threshold'],
-                                  #  val_check_interval=0.3,
                                   max_epochs=self.hparams['max_epochs'],
                                   min_epochs=self.hparams['min_epochs'],
                                   log_every_n_steps=10)
 
     def make_student_trainer(self):
-
         checkpoint_callback = ModelCheckpoint(
             monitor='val_loss',
             dirpath=self.save_dir_name_student,
@@ -327,23 +343,14 @@ class STAC(pl.LightningModule):
             debug=False,
             create_git_tag=False,
         )
-        early_stop_callback = EarlyStopping(
-            monitor='val_loss',
-            min_delta=0.0001,
-            patience=self.early_stopping_patience,
-            verbose=False,
-            mode='min'
-        )
 
         self.student_trainer = Trainer(gpus=-1,
                                   checkpoint_callback=True,
-                                  callbacks=[early_stop_callback, checkpoint_callback],
+                                  callbacks=[checkpoint_callback],
                                   logger=self.aim_logger,
                                   progress_bar_refresh_rate=1,
-                                #   check_val_every_n_epoch=1000,
                                   check_val_every_n_epoch=max(1, self.hparams['max_epochs'] // 10),
                                   gradient_clip_val=self.hparams['gradient_clip_threshold'],
-                                  #  val_check_interval=0.3,
                                   max_epochs=self.hparams['max_epochs'],
                                   min_epochs=self.hparams['min_epochs'],
                                   log_every_n_steps=10)
@@ -611,28 +618,28 @@ class STAC(pl.LightningModule):
         y_hat = y_hat.argmax(dim=-1)
         return torch.sum(y == y_hat).item() / len(y)
 
-    def optimizer_step(self, current_epoch, batch_nb, optimizer, optimizer_idx, closure, on_tpu=False,
-                       using_native_amp=False, using_lbfgs=False):
-        # warm up lr
-        if self.trainer.global_step < self.num_warmup_steps:
-            lr_scale = min(1., float(self.trainer.global_step + 1) / self.num_warmup_steps)
-        else:
-            lr_scale = 1 - (self.trainer.global_step - self.num_warmup_steps) / self.total_steps
-
-        self.logger.experiment.track(lr_scale * self.lr, name='lr', 
-                                         model=self.onTeacher, stage=self.stage)
-        
-
-        for pg in optimizer.param_groups:
-            pg['lr'] = lr_scale * self.lr
-
-        if self.trainer.global_step % 1 == 100: # TODO
-            print("\ninside optimizer: {} LR ={:.5f} @ step={}".format(
-                "teacher" if self.onTeacher else "student",
-                lr_scale * self.lr, self.trainer.global_step
-            ))
-        # update params
-        optimizer.step(closure=closure)
+    # def optimizer_step(self, current_epoch, batch_nb, optimizer, optimizer_idx, closure, on_tpu=False,
+    #                    using_native_amp=False, using_lbfgs=False):
+    #     # warm up lr
+    #     if self.trainer.global_step < self.num_warmup_steps:
+    #         lr_scale = min(1., float(self.trainer.global_step + 1) / self.num_warmup_steps)
+    #     else:
+    #         lr_scale = 1 - (self.trainer.global_step - self.num_warmup_steps) / self.total_steps
+    #
+    #     self.logger.experiment.track(lr_scale * self.lr, name='lr',
+    #                                      model=self.onTeacher, stage=self.stage)
+    #
+    #
+    #     for pg in optimizer.param_groups:
+    #         pg['lr'] = lr_scale * self.lr
+    #
+    #     if self.trainer.global_step % 1 == 100: # TODO
+    #         print("\ninside optimizer: {} LR ={:.5f} @ step={}".format(
+    #             "teacher" if self.onTeacher else "student",
+    #             lr_scale * self.lr, self.trainer.global_step
+    #         ))
+    #     # update params
+    #     optimizer.step(closure=closure)
 
     def optimizer_zero_grad(self, current_epoch, batch_idx, optimizer, opt_idx):
         optimizer.zero_grad()
@@ -640,8 +647,6 @@ class STAC(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=self.momentum,
                               weight_decay=self.weight_decay, nesterov=False)
-        # optimizer_sched = optim.lr_scheduler.CosineAnnealingLR(optimizer, eta_min=self.eta_min,
-        #                                                        T_max=(len(self.train_labeled_loader)*self.num_epochs - self.num_warmup_steps))
 
         return optimizer
 

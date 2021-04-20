@@ -67,7 +67,6 @@ if __name__ == "__main__":
     best_val_loss = 10000000
     best_student_loss = 10000000
     best_teacher_loss = 10000000
-    start_version_name = hparams['version_name']
     base_checkpoint_val_loss = 10000000
 
     loss_dict = {}
@@ -81,7 +80,7 @@ if __name__ == "__main__":
     initialization_times = {'base': ['from_coco'], 'adaption': ['from_coco']} # TODO
     for initialization in initialization_times[args.phase]:
         for experiment_id in range(attempts):
-            hparams['version_name'] = '{}_{}_{}_{}_{}_'.format(args.dataset_name, args.phase, args.stage, initialization, experiment_id) + start_version_name
+            hparams['version_name'] = '{}_{}_{}_{}_{}_'.format(args.dataset_name, args.phase, args.stage, initialization, experiment_id)
 
             model = STAC(argparse.Namespace(**hparams))
             model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
