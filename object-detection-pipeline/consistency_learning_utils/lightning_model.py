@@ -185,12 +185,9 @@ class STAC(pl.LightningModule):
 
         self.onTeacher = True  # as opposed to "on student"
 
-        self.save_dir_name_student = os.getcwd() + "/checkpoints_student/{}_{}/version_{}/".format(self.hparams['experiment_name'],
-                                                                                                  self.hparams['model'],
-                                                                                                  self.hparams['version_name'])
-        self.save_dir_name_teacher = os.getcwd() + "/checkpoints_teacher/{}_{}/version_{}/".format(self.hparams['experiment_name'],
-                                                                                                  self.hparams['model'],
-                                                                                                  self.hparams['version_name'])
+        stage_folder = os.path.join(self.hparams['phase_folder'], str(self.stage))
+        self.save_dir_name_teacher = os.path.join(stage_folder, 'teacher')
+        self.save_dir_name_student = os.path.join(stage_folder, 'student')
 
         print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
             self.hparams['initialization'], self.hparams['reuse_classifier']
@@ -399,7 +396,7 @@ class STAC(pl.LightningModule):
             target_boxes = []
             target_labels = []
             for j in range(len(labels)):
-                if scores[j] < self.confidence_treshold:
+                if scores[j] < self.confidence_threshold:
                     index.append(j)
             self.total_num_images += 1
             self.total_num_pseudo_boxes += len(boxes)
@@ -464,7 +461,6 @@ class STAC(pl.LightningModule):
         unsup_loss = self.student_unsupervised_step(unsup_batch)
 
         sup_loss = self.frcnn_loss(sup_y_hat)
-        print(sup_loss, unsup_loss)
         loss = sup_loss + self.lam * unsup_loss
 
         self.logger.experiment.track(sup_y_hat['loss_classifier'].item(), name='loss_classifier',

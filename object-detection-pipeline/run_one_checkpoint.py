@@ -20,11 +20,12 @@ parser.add_argument('--output_csv', type=str, default=None)
 args = parser.parse_args()
 
 training_dataset_name = "api_dataset_train"
-labeled_file_path = './session_data/{}/{}/train_{}.txt'.format(args.session_id, args.phase, args.stage)
-unlabeled_file_path = './session_data/{}/{}/train_unlabeled_{}.txt'.format(args.session_id, args.phase, args.stage)
+phase_folder = './session_data/{}/{}/'.format(args.session_id, args.phase)
+labeled_file_path = '{}/train_{}.txt'.format(phase_folder, args.stage)
+unlabeled_file_path = '{}/train_unlabeled_{}.txt'.format(phase_folder, args.stage)
 external_val_file_path = '/lwll/external/{}/validation.txt'.format(args.dataset_name)
 external_val_label_root = '/lwll/external/{}/validation_labels'.format(args.dataset_name)
-label_root = './session_data/{}/{}/labels'.format(args.session_id, args.phase)
+label_root = '{}/labels'.format(phase_folder)
 
 class_names = [i for i in range(args.class_num)]
 class_names_str = []
@@ -34,7 +35,7 @@ for class_name in class_names:
     class_names_str.append(class_name)
 
 test_dataset_name = "api_dataset_test"
-testing_file_path = './session_data/{}/{}/test.txt'.format(args.session_id, args.phase)
+testing_file_path = '{}/test.txt'.format(phase_folder)
 
 if __name__ == "__main__":
 
@@ -49,6 +50,7 @@ if __name__ == "__main__":
     hparams['output_csv'] = args.output_csv
     hparams['class_num'] = args.class_num
     hparams['stage'] = args.stage
+    hparams['phase_folder'] = phase_folder
 
     hparams['batches_per_epoch'] = int((num_labeled + hparams['batch_size'] - 1) / hparams['batch_size'])
 

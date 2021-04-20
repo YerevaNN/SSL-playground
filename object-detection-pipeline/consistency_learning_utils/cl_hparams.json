@@ -1,14 +1,14 @@
 {
-    "experiment_name": "refactoring",
+    "experiment_name": "refactoring3",
 
     "model": "fasterrcnn",
     "initialization": "backbone",
     "reuse_classifier": false,
 
     "learning_rate": 0.02,
-    "total_steps_teacher": 800,
-    "total_steps_student": 800,
-    "check_val_steps": 100,
+    "total_steps_teacher": 8000,
+    "total_steps_student": 8000,
+    "check_val_steps": 800,
     "warmup_steps": 200,
     "lr_schedule": "constant",
 
