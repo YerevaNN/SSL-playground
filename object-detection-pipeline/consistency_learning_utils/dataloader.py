@@ -8,7 +8,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import Compose, ToTensor, ToPILImage
 from PIL import Image
 
-from .helpers import autoaugment
+# from .helpers import autoaugment
 # from .helpers.transforms import RandomErasing
 
 class ConcatDataset(Dataset):
@@ -70,7 +70,7 @@ class MyDataset(Dataset):
 #                 label, x_center_rel, y_center_rel, bbox_width, bbox_height = line_arr
                 label, xmin, ymin, xmax, ymax = line_arr
                 box = {}
-                box['label'] = label
+                box['label'] = int(label)
                 box['bndbox'] = {}
 #                 box['bndbox']['xmin'] = float(x_center_rel - bbox_width/2) * width
 #                 box['bndbox']['ymin'] = float(y_center_rel - bbox_height/2) * height
@@ -89,6 +89,7 @@ class MyDataset(Dataset):
  
         with open(img_path, 'rb') as f:
             image = Image.open(f)
+            image = image.convert("RGB")
             width, height = image.size
             image = np.array(image)  # otherwise nothing will work! but should we transpose this?
         image_name = img_path.split('/')[-1]
