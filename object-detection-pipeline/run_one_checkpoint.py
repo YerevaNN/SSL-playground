@@ -47,6 +47,8 @@ if __name__ == "__main__":
     hparams['stage'] = args.stage
     hparams['phase_folder'] = phase_folder
 
+    hparams['total_steps_teacher'] = hparams['total_steps_teacher_initial'] + args.stage * hparams['total_steps_teacher_stage_inc']
+    hparams['total_steps_student'] = hparams['total_steps_student_initial'] + args.stage * hparams['total_steps_student_stage_inc']
     hparams['batches_per_epoch'] = int((num_labeled + hparams['batch_size'] - 1) / hparams['batch_size'])
 
     best_version_name = ''

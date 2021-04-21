@@ -6,8 +6,10 @@
     "reuse_classifier": "add",
 
     "learning_rate": 0.01,
-    "total_steps_teacher": 20,
-    "total_steps_student": 8000,
+    "total_steps_teacher_initial": 3000,
+    "total_steps_student_initial": 1000,
+    "total_steps_teacher_stage_inc": 1000,
+    "total_steps_student_stage_inc": 1000,
     "check_val_steps": 80,
     "warmup_steps": 200,
     "lr_schedule": "constant",
