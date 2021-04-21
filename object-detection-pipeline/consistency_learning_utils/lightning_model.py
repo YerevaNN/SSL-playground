@@ -13,6 +13,7 @@ from torch import nn
 from pytorch_lightning import Trainer
 
 from .meanAP import compute_map
+from mean_average_precision import MetricBuilder
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -217,6 +218,9 @@ class STAC(pl.LightningModule):
 
         with open("./logits.json", "w+") as jsonFile:
             jsonFile.write('')
+
+        self.mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
+                                                         num_classes=self.hparams['class_num'])
 
         makeFolder('./input')
         makeFolder('./input/ground-truth')
@@ -501,6 +505,9 @@ class STAC(pl.LightningModule):
 
         y_hat = self.forward(x, image_paths)
 
+        pred_for_mAP = []
+        truth_for_mAP = []
+
         for i in range(len(y_hat)):
             img_id = batch_idx * self.hparams['batch_size'] + i
             boxes = y_hat[i]['boxes'].cpu().numpy()
@@ -509,6 +516,8 @@ class STAC(pl.LightningModule):
 
             for (j, box) in enumerate(boxes):
                 add_to_preditcion(img_id, box[0], box[1], box[2], box[3], labels[j], scores[j])
+                pred_for_mAP.append([box[0], box[1], box[2], box[3], labels[j], scores[j]])
+
             if len(boxes) == 0:
                 f = open('./input/detection-results/' + str(img_id) + '.txt','a+')
                 f.close()
@@ -519,6 +528,9 @@ class STAC(pl.LightningModule):
                 ymin = int(box['bndbox']['ymin'])
                 ymax = int(box['bndbox']['ymax'])
                 add_to_annotation(img_id, xmin, ymin, xmax, ymax, int(box['label']))
+                truth_for_mAP.append([xmin, ymin, xmax, ymax, int(box['label']), 0, 0])
+
+        self.mAP.add(np.array(pred_for_mAP), np.array(truth_for_mAP))
 
         return {}
 
@@ -528,7 +540,6 @@ class STAC(pl.LightningModule):
         #     # self.log('val_loss', -self.validation_counter)
         #     val_loss = -self.validation_counter
         # else:
-        print("computing mAP in validation_end")
         try:
             mAP = compute_map()
         except Exception as e:
@@ -536,22 +547,38 @@ class STAC(pl.LightningModule):
             print(e)
             print("Setting mAP=0")
             mAP = 0
-        print("\nmAP = {:.3f}\n".format(mAP))
 
-        clear_folder('./input/detection-results')
-        clear_folder('./input/ground-truth')
+        # mAP1 = self.mAP.value(iou_thresholds=0.5, recall_thresholds=np.arange(0., 1.1, 0.1))['mAP']
+        mAP2 = self.mAP.value(iou_thresholds=0.5)['mAP']
+        ious = np.arange(0.5, 1.0, 0.05)
+        mAP3 = self.mAP.value(iou_thresholds=ious,
+                              recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
 
+        self.logger.experiment.track(mAP, name='map', model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(float(mAP2), name='map2', model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(float(mAP3['mAP']), name='mAP5095', model=self.onTeacher, stage=self.stage)
+        for iou in ious:
+            self.logger.experiment.track(
+                float(np.mean([x['ap'] for x in mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
+                model=self.onTeacher, stage=self.stage)
+
+        # val_loss as a surrogate for mAP
         val_loss = 1 - mAP
-
-        self.logger.experiment.track(mAP, name='map',
-                                         model=self.onTeacher, stage=self.stage)
         print('mAP: ', 1 - val_loss)
         print('best_mAP: ', 1 - self.best_val_loss)
+
         if self.onTeacher:
             self.best_teacher_val = min(self.best_teacher_val, val_loss)
         else:
             self.best_student_val = min(self.best_student_val, val_loss)
         self.best_val_loss = min(self.best_val_loss, val_loss)
+
+        # reset mAP calculation
+        clear_folder('./input/detection-results')
+        clear_folder('./input/ground-truth')
+        self.mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
+                                                         num_classes=self.hparams['class_num'])
+
         return {
             'val_loss': -self.validation_counter
         }
