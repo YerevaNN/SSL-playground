@@ -430,6 +430,13 @@ class STAC(pl.LightningModule):
         else:
             unsup_loss = 0 * augmented_x[0].new(1).squeeze()
 
+        # Enable in case of weight decay!
+        # for p in self.teacher.rpn.named_parameters():
+        #     self.logger.experiment.track(p[1].sum().item(),
+        #                                  name='teacher_weight', model=self.onTeacher,
+        #                                  stage=self.stage)
+        #     break
+
         self.logger.experiment.track(self.total_num_pseudo_boxes / self.total_num_images,
                                          name='avg_pseudo_boxes', model=self.onTeacher,
                                          stage=self.stage)
@@ -643,9 +650,6 @@ class STAC(pl.LightningModule):
         # update params
         optimizer.step(closure=optimizer_closure)
 
-    def optimizer_zero_grad(self, current_epoch, batch_idx, optimizer, opt_idx):
-        optimizer.zero_grad()
-
     def configure_optimizers(self):
         optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=self.momentum,
                               weight_decay=self.weight_decay, nesterov=False)
@@ -670,6 +674,8 @@ class STAC(pl.LightningModule):
             self.copy_student_from_best_teacher()
             for param in self.teacher.parameters():
                 param.requires_grad = False
+            # opt = self.optimizers()[0]
+
             self.validation_counter = 0
             self.onTeacher = False
 
