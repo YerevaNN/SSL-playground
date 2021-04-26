@@ -280,6 +280,26 @@ class STAC(pl.LightningModule):
             checkpoint_path = os.path.join(self.save_dir_name_teacher, checkpoint_name)
         self.test_from_checkpoint(checkpoint_path)
 
+    def zeroize_predictions_below(self, threshold_division):
+        directory = './input/detection-results'
+        for filename in os.listdir(directory):
+            file_path = os.path.join(directory, filename)
+            lines = []
+            with open(file_path, 'r') as f:
+                lines = [line.rstrip() for line in f]
+            for i, line in enumerate(lines):
+                line_split = line.split(' ')
+                if float(line_split[1]) <= threshold_division:
+                    line_split[1] = '0'
+                new_line = ""
+                for j in line_split:
+                    new_line += j + ' '
+                new_line = new_line[:-1]
+                lines[i] = new_line
+            with open(file_path, 'w') as f:
+                for item in lines:
+                    f.write("%s\n" % item)
+
     def set_datasets(self, labeled_file_path, unlabeled_file_path, testing_file_path,
                      external_val_file_path, external_val_label_root, label_root):
 
@@ -548,7 +568,17 @@ class STAC(pl.LightningModule):
         #     val_loss = -self.validation_counter
         # else:
         try:
-            mAP = compute_map()
+            # threshold_divisions = np.arange(0, 1.0, 0.05)
+            threshold_divisions = np.arange(0, 0.05, 0.05)
+            thd = 0
+            mAP = {}
+            for threshold_division in threshold_divisions:
+                self.zeroize_predictions_below(threshold_division)
+                mAP[thd] = compute_map()
+                self.logger.experiment.track(mAP[thd], name='map_cut_'+str(int(thd * 100)),
+                                             model=self.onTeacher, stage=self.stage)
+                thd += 0.05
+
         except Exception as e:
             print("Could not compute mAP")
             print(e)
@@ -561,7 +591,6 @@ class STAC(pl.LightningModule):
         mAP3 = self.mAP.value(iou_thresholds=ious,
                               recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
 
-        self.logger.experiment.track(mAP, name='map', model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(float(mAP2), name='map2', model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(float(mAP3['mAP']), name='mAP5095', model=self.onTeacher, stage=self.stage)
         for iou in ious:
@@ -570,7 +599,7 @@ class STAC(pl.LightningModule):
                 model=self.onTeacher, stage=self.stage)
 
         # val_loss as a surrogate for mAP
-        val_loss = 1 - mAP
+        val_loss = 1 - mAP[0]
         print('mAP: ', 1 - val_loss)
         print('best_mAP: ', 1 - self.best_val_loss)
 
