@@ -575,9 +575,9 @@ class STAC(pl.LightningModule):
             for threshold_division in threshold_divisions:
                 self.zeroize_predictions_below(threshold_division)
                 mAP[thd] = compute_map()
-                self.logger.experiment.track(mAP[thd], name='map_cut_'+str(int(thd * 100)),
+                self.logger.experiment.track(mAP[thd], name='map_cut_'+str(thd),
                                              model=self.onTeacher, stage=self.stage)
-                thd += 0.05
+                thd += 5
 
         except Exception as e:
             print("Could not compute mAP")

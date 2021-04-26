@@ -24,7 +24,7 @@ def main(_):
         dataset_name = task['session']['Session_Status']['current_dataset']['name']
         # TRAIN_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/train'.format(dataset_name, dataset_name)
         # TEST_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/test'.format(dataset_name, dataset_name)
-        TRAIN_DATASET_PATH = '/lwll/evaluation/{}/{}_full/train'.format(dataset_name, dataset_name)
+        TRAIN_DATASET_PATH = '/lwll/external/{}/{}_full/train'.format(dataset_name, dataset_name)
         TEST_DATASET_PATH = '/lwll/evaluation/{}/{}_full/test'.format(dataset_name, dataset_name)
 
         training_classes = task['session']['Session_Status']['current_dataset']['classes']
@@ -192,7 +192,7 @@ def main(_):
             with open(os.path.join(current_task_dir, 'stage{}.json'.format(stage)), 'w') as f:
                 json.dump(class_id_to_name, f)
 
-            if stage < 4:
+            if stage == 7:
                 cmd = 'python run_one_checkpoint.py --output_csv {} --session_id {} --dataset_name {} --phase {} --stage {} --class_num {}'.format(output_csv, task['session_token'], task['session']['Session_Status']['current_dataset']['name'], phase, stage, len(class_id_to_name.keys()))
                 print("Starting: {}".format(cmd))
                 os.system(cmd)
