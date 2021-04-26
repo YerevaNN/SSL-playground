@@ -13,6 +13,12 @@ parser.add_argument('--stage', type=int, default=None)
 parser.add_argument('--class_num', type=int, default=None)
 parser.add_argument('--output_csv', type=str, default=None)
 
+parser.add_argument('--experiment_name', type=str, default=None)
+parser.add_argument('--learning_rate', type=float, default=None)
+parser.add_argument('--gradient_clip_threshold', type=float, default=None)
+parser.add_argument('--confidence_threshold', type=float, default=None)
+parser.add_argument('--weight_decay', type=float, default=None)
+
 args = parser.parse_args()
 
 training_dataset_name = "api_dataset_train"
@@ -46,6 +52,14 @@ if __name__ == "__main__":
     hparams['class_num'] = args.class_num
     hparams['stage'] = args.stage
     hparams['phase_folder'] = phase_folder
+
+    argsdict = vars(args)
+
+    for key in ['experiment_name', 'learning_rate', 'gradient_clip_threshold',
+                'confidence_threshold', 'weight_decay']:
+        if key in argsdict and argsdict[key] is not None:
+            print("Overriding {} to {}".format(key, argsdict[key]))
+            hparams[key] = argsdict[key]
 
     hparams['total_steps_teacher'] = hparams['total_steps_teacher_initial'] + args.stage * hparams['total_steps_teacher_stage_inc']
     hparams['total_steps_student'] = hparams['total_steps_student_initial'] + args.stage * hparams['total_steps_student_stage_inc']
