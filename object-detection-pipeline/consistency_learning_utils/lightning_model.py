@@ -10,6 +10,7 @@ import torch.optim as optim
 from torchvision.utils import save_image
 
 from torch import nn
+from collections import OrderedDict
 from pytorch_lightning import Trainer
 
 from mean_average_precision import MetricBuilder
@@ -197,7 +198,6 @@ class STAC(pl.LightningModule):
 
         self.mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
                                                          num_classes=self.hparams['class_num'])
-        self.prediction_cache = {}
 
 
     def set_test_with_student(self, val):
@@ -214,7 +214,11 @@ class STAC(pl.LightningModule):
         self.student.load_state_dict(model_dict)
 
     def load_best_teacher(self):
-        checkpoint_name = os.listdir(self.save_dir_name_teacher)[0]
+        checkpoint_name = ''
+        for ckpt_name in os.listdir(self.save_dir_name_teacher):
+            if ckpt_name.endswith('ckpt'):
+                checkpoint_name = ckpt_name
+                break
         checkpoint_path = os.path.join(self.save_dir_name_teacher, checkpoint_name)
         best_dict = torch.load(checkpoint_path)
         actual_dict = {k[8:]: v for k, v in best_dict['state_dict'].items() if k.startswith('teacher')}
@@ -253,6 +257,22 @@ class STAC(pl.LightningModule):
             checkpoint_name = os.listdir(self.save_dir_name_teacher)[0]
             checkpoint_path = os.path.join(self.save_dir_name_teacher, checkpoint_name)
         self.test_from_checkpoint(checkpoint_path)
+
+    def update_teacher_EMA(self, keep_rate=0.996):
+        student_model_dict = {
+            key: value for key, value in self.student.state_dict().items()
+        }
+
+        new_teacher_dict = OrderedDict()
+        for key, value in self.teacher.state_dict().items():
+            if key in student_model_dict.keys():
+                new_teacher_dict[key] = (
+                    student_model_dict[key] * (1 - keep_rate) + value * keep_rate
+                )
+            else:
+                raise Exception("{} is not found in student model".format(key))
+
+        self.teacher.load_state_dict(new_teacher_dict)
 
     def set_datasets(self, labeled_file_path, unlabeled_file_path, testing_file_path,
                      external_val_file_path, external_val_label_root, label_root):
@@ -436,6 +456,8 @@ class STAC(pl.LightningModule):
         return {'loss': loss}
 
     def student_training_step(self, batch_list):
+        self.update_teacher_EMA(self.hparams['EMA_keep_rate'])
+
         sup_batch, unsup_batch = batch_list
         self.student.set_is_supervised(True)
 
@@ -447,7 +469,13 @@ class STAC(pl.LightningModule):
 
         sup_loss = self.frcnn_loss(sup_y_hat)
         loss = sup_loss + self.lam * unsup_loss
-
+        # if self.global_step % 40 < 20:
+        #     loss = sup_loss
+        # else:
+        #     loss = unsup_loss
+        teacher_weight = self.teacher.roi_heads.box_predictor.cls_score.weight.sum().item()
+        self.logger.experiment.track(teacher_weight, name='teacher_weight',
+                                         model=self.onTeacher, stage=self.stage)            
         self.logger.experiment.track(sup_y_hat['loss_classifier'].item(), name='loss_classifier',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(sup_y_hat['loss_box_reg'].item(), name='loss_box_reg',
@@ -486,11 +514,11 @@ class STAC(pl.LightningModule):
 
         y_hat = self.forward(x, image_paths)
 
-        for i in range(len(y_hat)):
-            pred_for_mAP = []
-            truth_for_mAP = []
-            img_id = image_paths[i]
+        pred_for_mAP = []
+        truth_for_mAP = []
 
+        for i in range(len(y_hat)):
+            img_id = batch_idx * self.hparams['batch_size'] + i
             boxes = y_hat[i]['boxes'].cpu().numpy()
             labels = y_hat[i]['labels'].cpu().numpy()
             scores = y_hat[i]['scores'].cpu().numpy()
@@ -505,11 +533,7 @@ class STAC(pl.LightningModule):
                 ymax = int(box['bndbox']['ymax'])
                 truth_for_mAP.append([xmin, ymin, xmax, ymax, int(box['label']), 0, 0])
 
-            self.mAP.add(np.array(pred_for_mAP), np.array(truth_for_mAP))
-            self.prediction_cache[img_id] = {
-                "pred": pred_for_mAP,
-                "truth": truth_for_mAP
-            }
+        self.mAP.add(np.array(pred_for_mAP), np.array(truth_for_mAP))
 
         return {}
 
@@ -543,21 +567,9 @@ class STAC(pl.LightningModule):
         self.mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
                                                          num_classes=self.hparams['class_num'])
 
-        self.store_predictions()
-        self.prediction_cache = {}  # reset
-
         return {
             'val_loss': -self.validation_counter
         }
-
-    def store_predictions(self):
-        if self.onTeacher:
-            folder = self.save_dir_name_teacher
-        else:
-            folder = self.save_dir_name_student
-        filename = os.path.join(folder, "{}.npy".format(self.global_step))
-        os.makedirs(folder, exist_ok=True)
-        np.save(filename, self.prediction_cache)
 
     def test_step(self, batch, batch_idx):
         x, target, image_paths = batch
