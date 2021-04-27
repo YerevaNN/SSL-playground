@@ -198,6 +198,7 @@ class STAC(pl.LightningModule):
 
         self.mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
                                                          num_classes=self.hparams['class_num'])
+        self.prediction_cache = {}
 
 
     def set_test_with_student(self, val):
@@ -518,7 +519,10 @@ class STAC(pl.LightningModule):
         truth_for_mAP = []
 
         for i in range(len(y_hat)):
-            img_id = batch_idx * self.hparams['batch_size'] + i
+            pred_for_mAP = []
+            truth_for_mAP = []
+            img_id = image_paths[i]
+
             boxes = y_hat[i]['boxes'].cpu().numpy()
             labels = y_hat[i]['labels'].cpu().numpy()
             scores = y_hat[i]['scores'].cpu().numpy()
@@ -533,7 +537,11 @@ class STAC(pl.LightningModule):
                 ymax = int(box['bndbox']['ymax'])
                 truth_for_mAP.append([xmin, ymin, xmax, ymax, int(box['label']), 0, 0])
 
-        self.mAP.add(np.array(pred_for_mAP), np.array(truth_for_mAP))
+            self.mAP.add(np.array(pred_for_mAP), np.array(truth_for_mAP))
+            self.prediction_cache[img_id] = {
+                "pred": pred_for_mAP,
+                "truth": truth_for_mAP
+            }
 
         return {}
 
@@ -567,9 +575,21 @@ class STAC(pl.LightningModule):
         self.mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
                                                          num_classes=self.hparams['class_num'])
 
+        self.store_predictions()
+        self.prediction_cache = {}  # reset
+
         return {
             'val_loss': -self.validation_counter
         }
+
+    def store_predictions(self):
+        if self.onTeacher:
+            folder = self.save_dir_name_teacher
+        else:
+            folder = self.save_dir_name_student
+        filename = os.path.join(folder, "{}.npy".format(self.global_step))
+        os.makedirs(folder, exist_ok=True)
+        np.save(filename, self.prediction_cache)
 
     def test_step(self, batch, batch_idx):
         x, target, image_paths = batch
