@@ -556,7 +556,7 @@ class STAC(pl.LightningModule):
         else:
             folder = self.save_dir_name_student
         filename = os.path.join(folder, "{}.npy".format(self.global_step))
-
+        os.makedirs(folder, exist_ok=True)
         np.save(filename, self.prediction_cache)
 
     def test_step(self, batch, batch_idx):
