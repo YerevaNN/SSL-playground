@@ -8,7 +8,7 @@ import argparse
 import math
 
 import numpy as np
-def compute_map():
+def compute_map(experiment_name, session_id):
     MINOVERLAP = 0.5 # default value (defined in the PASCAL VOC2012 challenge)
 
     # parser = argparse.ArgumentParser()
@@ -53,10 +53,10 @@ def compute_map():
 
     # os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-    GT_PATH = os.path.join(os.getcwd(), 'input', 'ground-truth')
-    DR_PATH = os.path.join(os.getcwd(), 'input', 'detection-results')
+    GT_PATH = os.path.join(os.getcwd(), 'input', 'ground-truth', experiment_name, session_id)
+    DR_PATH = os.path.join(os.getcwd(), 'input', 'detection-results', experiment_name, session_id)
     # if there are no images then no animation can be shown
-    IMG_PATH = os.path.join(os.getcwd(), 'input', 'images-optional')
+    IMG_PATH = os.path.join(os.getcwd(), 'input', experiment_name, session_id, 'images-optional')
     if os.path.exists(IMG_PATH): 
         for dirpath, dirnames, files in os.walk(IMG_PATH):
             if not files:

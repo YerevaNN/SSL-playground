@@ -52,6 +52,7 @@ if __name__ == "__main__":
     hparams['class_num'] = args.class_num
     hparams['stage'] = args.stage
     hparams['phase_folder'] = phase_folder
+    hparams['session_id'] = args.session_id
 
     argsdict = vars(args)
 

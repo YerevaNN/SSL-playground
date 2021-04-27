@@ -62,14 +62,22 @@ def makeFolder(directory):
         os.makedirs(directory)
 
 
-def add_to_annotation(image_id, xmin, ymin, xmax, ymax, label):
-    with open('./input/ground-truth/' + str(image_id) + '.txt', 'a+') as f:
+def add_to_annotation(image_id, xmin, ymin, xmax, ymax, label, experiment_name, session_id):
+    file_dir = './input/ground-truth/' + experiment_name
+    makeFolder(file_dir)
+    file_dir += '/' + session_id 
+    makeFolder(file_dir)
+    with open(file_dir + '/' + str(image_id) + '.txt', 'a+') as f:
         label = str(label)
         f.write(label + ' ' + str(xmin) + ' ' + str(ymin) + ' ' + str(xmax) + ' ' + str(ymax) + '\n')
 
 
-def add_to_preditcion(image_id, xmin, ymin, xmax, ymax, label, confidence):
-    with open('./input/detection-results/' + str(image_id) + '.txt','a+') as f:
+def add_to_preditcion(image_id, xmin, ymin, xmax, ymax, label, confidence, experiment_name, session_id):
+    file_dir = './input/detection-results/' + experiment_name
+    makeFolder(file_dir)
+    file_dir += '/' + session_id 
+    makeFolder(file_dir)
+    with open(file_dir + '/' + str(image_id) + '.txt', 'a+') as f:
         label = str(label)
         f.write(label + ' ' + str(confidence) + ' ' + str(xmin) + ' ' + str(ymin) + ' ' + str(xmax) + ' ' + str(ymax) + '\n')
 
@@ -281,7 +289,7 @@ class STAC(pl.LightningModule):
         self.test_from_checkpoint(checkpoint_path)
 
     def zeroize_predictions_below(self, threshold_division):
-        directory = './input/detection-results'
+        directory = './input/detection-results/' + self.hparams['experiment_name'] + '/' + self.hparams['session_id']
         for filename in os.listdir(directory):
             file_path = os.path.join(directory, filename)
             lines = []
@@ -542,11 +550,11 @@ class STAC(pl.LightningModule):
             scores = y_hat[i]['scores'].cpu().numpy()
 
             for (j, box) in enumerate(boxes):
-                add_to_preditcion(img_id, box[0], box[1], box[2], box[3], labels[j], scores[j])
+                add_to_preditcion(img_id, box[0], box[1], box[2], box[3], labels[j], scores[j], self.hparams['experiment_name'], self.hparams['session_id'])
                 pred_for_mAP.append([box[0], box[1], box[2], box[3], labels[j], scores[j]])
 
             if len(boxes) == 0:
-                f = open('./input/detection-results/' + str(img_id) + '.txt','a+')
+                f = open('./input/detection_results/' + self.hparams['experiment_name'] + '/' + self.hparams['session_id'] + '/' + str(img_id) + '.txt', 'a+')
                 f.close()
 
             for box in y[i]:
@@ -554,7 +562,7 @@ class STAC(pl.LightningModule):
                 xmax = int(box['bndbox']['xmax'])
                 ymin = int(box['bndbox']['ymin'])
                 ymax = int(box['bndbox']['ymax'])
-                add_to_annotation(img_id, xmin, ymin, xmax, ymax, int(box['label']))
+                add_to_annotation(img_id, xmin, ymin, xmax, ymax, int(box['label']), self.hparams['experiment_name'], self.hparams['session_id'])
                 truth_for_mAP.append([xmin, ymin, xmax, ymax, int(box['label']), 0, 0])
 
         self.mAP.add(np.array(pred_for_mAP), np.array(truth_for_mAP))
@@ -574,7 +582,7 @@ class STAC(pl.LightningModule):
             mAP = {}
             for threshold_division in threshold_divisions:
                 self.zeroize_predictions_below(threshold_division)
-                mAP[thd] = compute_map()
+                mAP[thd] = compute_map(self.hparams['experiment_name'], self.hparams['session_id'])
                 self.logger.experiment.track(mAP[thd], name='map_cut_'+str(thd),
                                              model=self.onTeacher, stage=self.stage)
                 thd += 5
@@ -610,8 +618,9 @@ class STAC(pl.LightningModule):
         self.best_val_loss = min(self.best_val_loss, val_loss)
 
         # reset mAP calculation
-        clear_folder('./input/detection-results')
-        clear_folder('./input/ground-truth')
+        clear_folder('./input/detection-results/' + self.hparams['experiment_name'] + '/' + self.hparams['session_id'])
+        clear_folder('./input/ground-truth/' + self.hparams['experiment_name'] + '/' + self.hparams['session_id'])
+
         self.mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
                                                          num_classes=self.hparams['class_num'])
 
