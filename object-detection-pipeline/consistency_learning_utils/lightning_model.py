@@ -12,7 +12,6 @@ from torchvision.utils import save_image
 from torch import nn
 from pytorch_lightning import Trainer
 
-from .meanAP import compute_map
 from mean_average_precision import MetricBuilder
 
 import pytorch_lightning as pl
@@ -55,37 +54,6 @@ def break_batch(batch):
         y.append(img[1])
         paths.append(img[2])
     return x, y, paths
-
-
-def makeFolder(directory):
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-
-
-def add_to_annotation(image_id, xmin, ymin, xmax, ymax, label, experiment_name, session_id):
-    file_dir = './input/ground-truth/' + experiment_name
-    makeFolder(file_dir)
-    file_dir += '/' + session_id 
-    makeFolder(file_dir)
-    with open(file_dir + '/' + str(image_id) + '.txt', 'a+') as f:
-        label = str(label)
-        f.write(label + ' ' + str(xmin) + ' ' + str(ymin) + ' ' + str(xmax) + ' ' + str(ymax) + '\n')
-
-
-def add_to_preditcion(image_id, xmin, ymin, xmax, ymax, label, confidence, experiment_name, session_id):
-    file_dir = './input/detection-results/' + experiment_name
-    makeFolder(file_dir)
-    file_dir += '/' + session_id 
-    makeFolder(file_dir)
-    with open(file_dir + '/' + str(image_id) + '.txt', 'a+') as f:
-        label = str(label)
-        f.write(label + ' ' + str(confidence) + ' ' + str(xmin) + ' ' + str(ymin) + ' ' + str(xmax) + ' ' + str(ymax) + '\n')
-
-
-def clear_folder(path):
-    for f in os.listdir(path):
-        os.remove(path + '/' + f)
-
 
 class SkipConnection(nn.Module):
 
@@ -230,9 +198,6 @@ class STAC(pl.LightningModule):
         self.mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
                                                          num_classes=self.hparams['class_num'])
 
-        makeFolder('./input')
-        makeFolder('./input/ground-truth')
-        makeFolder('./input/detection-results')
 
     def set_test_with_student(self, val):
         self.testWithStudent = val
@@ -287,26 +252,6 @@ class STAC(pl.LightningModule):
             checkpoint_name = os.listdir(self.save_dir_name_teacher)[0]
             checkpoint_path = os.path.join(self.save_dir_name_teacher, checkpoint_name)
         self.test_from_checkpoint(checkpoint_path)
-
-    def zeroize_predictions_below(self, threshold_division):
-        directory = './input/detection-results/' + self.hparams['experiment_name'] + '/' + self.hparams['session_id']
-        for filename in os.listdir(directory):
-            file_path = os.path.join(directory, filename)
-            lines = []
-            with open(file_path, 'r') as f:
-                lines = [line.rstrip() for line in f]
-            for i, line in enumerate(lines):
-                line_split = line.split(' ')
-                if float(line_split[1]) <= threshold_division:
-                    line_split[1] = '0'
-                new_line = ""
-                for j in line_split:
-                    new_line += j + ' '
-                new_line = new_line[:-1]
-                lines[i] = new_line
-            with open(file_path, 'w') as f:
-                for item in lines:
-                    f.write("%s\n" % item)
 
     def set_datasets(self, labeled_file_path, unlabeled_file_path, testing_file_path,
                      external_val_file_path, external_val_label_root, label_root):
@@ -550,19 +495,13 @@ class STAC(pl.LightningModule):
             scores = y_hat[i]['scores'].cpu().numpy()
 
             for (j, box) in enumerate(boxes):
-                add_to_preditcion(img_id, box[0], box[1], box[2], box[3], labels[j], scores[j], self.hparams['experiment_name'], self.hparams['session_id'])
                 pred_for_mAP.append([box[0], box[1], box[2], box[3], labels[j], scores[j]])
-
-            if len(boxes) == 0:
-                f = open('./input/detection_results/' + self.hparams['experiment_name'] + '/' + self.hparams['session_id'] + '/' + str(img_id) + '.txt', 'a+')
-                f.close()
 
             for box in y[i]:
                 xmin = int(box['bndbox']['xmin'])
                 xmax = int(box['bndbox']['xmax'])
                 ymin = int(box['bndbox']['ymin'])
                 ymax = int(box['bndbox']['ymax'])
-                add_to_annotation(img_id, xmin, ymin, xmax, ymax, int(box['label']), self.hparams['experiment_name'], self.hparams['session_id'])
                 truth_for_mAP.append([xmin, ymin, xmax, ymax, int(box['label']), 0, 0])
 
         self.mAP.add(np.array(pred_for_mAP), np.array(truth_for_mAP))
@@ -571,27 +510,6 @@ class STAC(pl.LightningModule):
 
     def validation_epoch_end(self, results):
         self.validation_counter += 1
-        # if self.stage == 0 or self.validation_part == 0:
-        #     # self.log('val_loss', -self.validation_counter)
-        #     val_loss = -self.validation_counter
-        # else:
-        try:
-            # threshold_divisions = np.arange(0, 1.0, 0.05)
-            threshold_divisions = np.arange(0, 0.05, 0.05)
-            thd = 0
-            mAP = {}
-            for threshold_division in threshold_divisions:
-                self.zeroize_predictions_below(threshold_division)
-                mAP[thd] = compute_map(self.hparams['experiment_name'], self.hparams['session_id'])
-                self.logger.experiment.track(mAP[thd], name='map_cut_'+str(thd),
-                                             model=self.onTeacher, stage=self.stage)
-                thd += 5
-
-        except Exception as e:
-            print("Could not compute mAP")
-            print(e)
-            print("Setting mAP=0")
-            mAP = 0
 
         # mAP1 = self.mAP.value(iou_thresholds=0.5, recall_thresholds=np.arange(0., 1.1, 0.1))['mAP']
         mAP2 = self.mAP.value(iou_thresholds=0.5)['mAP']
@@ -607,7 +525,7 @@ class STAC(pl.LightningModule):
                 model=self.onTeacher, stage=self.stage)
 
         # val_loss as a surrogate for mAP
-        val_loss = 1 - mAP[0]
+        val_loss = 1 - mAP2
         print('mAP: ', 1 - val_loss)
         print('best_mAP: ', 1 - self.best_val_loss)
 
@@ -616,10 +534,6 @@ class STAC(pl.LightningModule):
         else:
             self.best_student_val = min(self.best_student_val, val_loss)
         self.best_val_loss = min(self.best_val_loss, val_loss)
-
-        # reset mAP calculation
-        clear_folder('./input/detection-results/' + self.hparams['experiment_name'] + '/' + self.hparams['session_id'])
-        clear_folder('./input/ground-truth/' + self.hparams['experiment_name'] + '/' + self.hparams['session_id'])
 
         self.mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
                                                          num_classes=self.hparams['class_num'])
@@ -635,7 +549,6 @@ class STAC(pl.LightningModule):
             name = image_path.split('/')[-1]
             name = name[:-4]
             names.append(name)
-        # print(names)
         if self.testWithStudent:
             y_hat = self.student_forward(x, image_paths)
         else:
@@ -646,14 +559,9 @@ class STAC(pl.LightningModule):
             boxes = y_hat[i]['boxes'].cpu().numpy()  # x_min, y_min, x_max, y_max
             labels = y_hat[i]['labels'].cpu().numpy()
             scores = y_hat[i]['scores'].cpu().numpy()
-            # print(img_id)
-            # print(boxes)
-            # print(labels)
-            # print(scores)
             for j, box in enumerate(boxes):
                 row = [img_id, scores[j], labels[j], ','.join(["{:.0f}".format(t) for t in box])]
                 rows.append(row)
-                # add_to_preditcion(batch_idx, box[0], box[1], box[2], box[3], labels[i], scores[i]) # what is this? :)
 
         self.csvwriter.writerows(rows)
 
