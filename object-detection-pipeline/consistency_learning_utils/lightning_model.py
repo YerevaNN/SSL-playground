@@ -226,7 +226,11 @@ class STAC(pl.LightningModule):
         self.teacher.load_state_dict(actual_dict)
 
     def copy_student_from_best_teacher(self):
-        checkpoint_name = os.listdir(self.save_dir_name_teacher)[0]
+        checkpoint_name = ''
+        for ckpt_name in os.listdir(self.save_dir_name_teacher):
+            if ckpt_name.endswith('ckpt'):
+                checkpoint_name = ckpt_name
+                break
         checkpoint_path = os.path.join(self.save_dir_name_teacher, checkpoint_name)
         best_dict = torch.load(checkpoint_path)
         actual_dict = {k[8:]: v for k, v in best_dict['state_dict'].items() if k.startswith('teacher')}
@@ -252,11 +256,16 @@ class STAC(pl.LightningModule):
 
     def test_from_best_checkpoint(self):
         if self.testWithStudent:
-            checkpoint_name = os.listdir(self.save_dir_name_student)[0]
-            checkpoint_path = os.path.join(self.save_dir_name_student, checkpoint_name)
+            ckpt_path = self.save_dir_name_student
         else:
-            checkpoint_name = os.listdir(self.save_dir_name_teacher)[0]
-            checkpoint_path = os.path.join(self.save_dir_name_teacher, checkpoint_name)
+            ckpt_path = self.save_dir_name_teacher
+        
+        checkpoint_name = ''
+        for ckpt_name in os.listdir(ckpt_path):
+            if ckpt_name.endswith('ckpt'):
+                checkpoint_name = ckpt_name
+                break
+        checkpoint_path = os.path.join(ckpt_path, checkpoint_name)
         self.test_from_checkpoint(checkpoint_path)
 
     def update_teacher_EMA(self, keep_rate=0.996):
