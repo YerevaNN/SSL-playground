@@ -478,16 +478,13 @@ class STAC(pl.LightningModule):
         unsup_loss = self.student_unsupervised_step(unsup_batch)
 
         sup_loss = self.frcnn_loss(sup_y_hat)
-        # loss = sup_loss + self.lam * unsup_loss
-        if self.global_step % 2 == 0 or unsup_loss.sum().item() == 0.0:
-            loss = sup_loss
-        else:
-            loss = unsup_loss
+        loss = sup_loss + self.lam * unsup_loss
+        # if self.global_step % 40 < 20:
+        #     loss = sup_loss
+        # else:
+        #     loss = unsup_loss
         teacher_weight = self.teacher.roi_heads.box_predictor.cls_score.weight.sum().item()
         self.logger.experiment.track(teacher_weight, name='teacher_weight',
-                                         model=self.onTeacher, stage=self.stage)           
-        student_weight = self.student.roi_heads.box_predictor.cls_score.weight.sum().item()
-        self.logger.experiment.track(student_weight, name='student_weight',
                                          model=self.onTeacher, stage=self.stage)            
         self.logger.experiment.track(sup_y_hat['loss_classifier'].item(), name='loss_classifier',
                                          model=self.onTeacher, stage=self.stage)
@@ -644,10 +641,7 @@ class STAC(pl.LightningModule):
             if self.trainer.global_step < self.warmup_steps:
                 lr_scale = min(1., float(self.trainer.global_step + 1) / self.warmup_steps)
             else:
-                t_steps = self.hparams['total_steps_student']
-                if self.onTeacher:
-                    t_steps = self.hparams['total_steps_teacher']
-                lr_scale = 1 - (self.trainer.global_step - self.warmup_steps) / (t_steps - self.warmup_steps)
+                lr_scale = 1. # - (self.trainer.global_step - self.num_warmup_steps) / self.total_steps
         else:
             raise NotImplementedError
 
