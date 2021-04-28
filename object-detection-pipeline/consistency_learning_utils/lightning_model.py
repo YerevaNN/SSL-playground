@@ -134,9 +134,10 @@ def model_changed_classifier(reuse_classifier=False, initialize=False, class_num
 class STAC(pl.LightningModule):
     def __init__(self, hparams: Namespace) -> None:
         super().__init__()
-        # pl.seed_everything(2)
 
         self.hparams = hparams
+        pl.seed_everything(self.hparams['seed'])
+
         self.lr = self.hparams['learning_rate']
         self.stage = self.hparams['stage']
         self.confidence_threshold = self.hparams['confidence_threshold']
