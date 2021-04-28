@@ -5,9 +5,9 @@ import numpy as np
 import json
 
 import torch
+# torch.use_deterministic_algorithms(True)  # not in this version?
 from .nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
 import torch.optim as optim
-from torchvision.utils import save_image
 
 from torch import nn
 from collections import OrderedDict
@@ -17,12 +17,9 @@ from mean_average_precision import MetricBuilder
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.callbacks import EarlyStopping
-from pytorch_lightning.loggers import TestTubeLogger
 from aim.pytorch_lightning import AimLogger
 
 from .dataloader import get_train_test_loaders
-# from .stac_trainer import StacTrainer
 
 def make_target_from_y(y):
     """
@@ -134,9 +131,9 @@ def model_changed_classifier(reuse_classifier=False, initialize=False, class_num
 class STAC(pl.LightningModule):
     def __init__(self, hparams: Namespace) -> None:
         super().__init__()
-        # pl.seed_everything(2)
 
         self.hparams = hparams
+
         self.lr = self.hparams['learning_rate']
         self.stage = self.hparams['stage']
         self.confidence_threshold = self.hparams['confidence_threshold']
@@ -317,6 +314,7 @@ class STAC(pl.LightningModule):
             min_steps=self.hparams['total_steps_teacher'],
             max_steps=self.hparams['total_steps_teacher'],
             check_val_every_n_epoch=self.check_val_epochs,
+            deterministic=True
         )
 
 
@@ -339,6 +337,7 @@ class STAC(pl.LightningModule):
             min_steps=self.hparams['total_steps_student'],
             max_steps=self.hparams['total_steps_student'],
             check_val_every_n_epoch=self.check_val_epochs,
+            deterministic=True
         )
 
     def student_forward(self, x, image_paths):

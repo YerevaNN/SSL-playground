@@ -1,6 +1,7 @@
 from pipeline_utils import *
 import os
 import shutil
+import pytorch_lightning as pl
 
 from consistency_learning_utils.lightning_model import STAC
 
@@ -18,6 +19,8 @@ parser.add_argument('--learning_rate', type=float, default=None)
 parser.add_argument('--gradient_clip_threshold', type=float, default=None)
 parser.add_argument('--confidence_threshold', type=float, default=None)
 parser.add_argument('--weight_decay', type=float, default=None)
+parser.add_argument('--seed', type=int, default=None)
+parser.add_argument('--EMA_keep_rate', type=float, default=None)
 
 args = parser.parse_args()
 
@@ -43,8 +46,6 @@ if __name__ == "__main__":
 
     with open('consistency_learning_utils/cl_hparams.json') as f:
         hparams = json.load(f)
-    
-    # pl.seed_everything(hparams['seed'])
 
     with open(labeled_file_path) as f:
         num_labeled = len(f.readlines())
@@ -57,7 +58,7 @@ if __name__ == "__main__":
     argsdict = vars(args)
 
     for key in ['experiment_name', 'learning_rate', 'gradient_clip_threshold',
-                'confidence_threshold', 'weight_decay']:
+                'confidence_threshold', 'weight_decay', 'seed', 'EMA_keep_rate']:
         if key in argsdict and argsdict[key] is not None:
             print("Overriding {} to {}".format(key, argsdict[key]))
             hparams[key] = argsdict[key]
@@ -65,6 +66,8 @@ if __name__ == "__main__":
     hparams['total_steps_teacher'] = hparams['total_steps_teacher_initial'] + args.stage * hparams['total_steps_teacher_stage_inc']
     hparams['total_steps_student'] = hparams['total_steps_student_initial'] + args.stage * hparams['total_steps_student_stage_inc']
     hparams['batches_per_epoch'] = int((num_labeled + hparams['batch_size'] - 1) / hparams['batch_size'])
+
+    pl.seed_everything(hparams['seed'])
 
     best_version_name = ''
     best_val_loss = 10000000
