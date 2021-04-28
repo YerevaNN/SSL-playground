@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-import random
 import os
 
 from torch.utils.data import Dataset, DataLoader
@@ -100,16 +99,6 @@ class MyDataset(Dataset):
         else:
             target = self.__get_target__(image_name, width, height)
         return image, target, img_path
-
-
-def set_seed(seed):
-    import random
-    import numpy as np
-    import torch
-
-    random.seed(seed)
-    torch.manual_seed(seed)
-    np.random.seed(seed)
 
 
 def voc_collate_fn(batch):
