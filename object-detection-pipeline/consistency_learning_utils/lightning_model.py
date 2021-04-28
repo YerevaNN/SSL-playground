@@ -5,9 +5,9 @@ import numpy as np
 import json
 
 import torch
+# torch.use_deterministic_algorithms(True)  # not in this version?
 from .nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
 import torch.optim as optim
-from torchvision.utils import save_image
 
 from torch import nn
 from collections import OrderedDict
@@ -17,12 +17,9 @@ from mean_average_precision import MetricBuilder
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.callbacks import EarlyStopping
-from pytorch_lightning.loggers import TestTubeLogger
 from aim.pytorch_lightning import AimLogger
 
 from .dataloader import get_train_test_loaders
-# from .stac_trainer import StacTrainer
 
 def make_target_from_y(y):
     """
@@ -136,7 +133,6 @@ class STAC(pl.LightningModule):
         super().__init__()
 
         self.hparams = hparams
-        pl.seed_everything(self.hparams['seed'])
 
         self.lr = self.hparams['learning_rate']
         self.stage = self.hparams['stage']

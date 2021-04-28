@@ -4,7 +4,7 @@ import os
 import json
 import collections
 import pandas as pd
-import random
+# import random
 
 def generate_random_predictions_on_test_set_obj_detection(test_imgs, current_dataset_classes):
     """

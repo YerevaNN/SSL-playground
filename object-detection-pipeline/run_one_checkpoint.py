@@ -1,6 +1,7 @@
 from pipeline_utils import *
 import os
 import shutil
+import pytorch_lightning as pl
 
 from consistency_learning_utils.lightning_model import STAC
 
@@ -44,8 +45,6 @@ if __name__ == "__main__":
 
     with open('consistency_learning_utils/cl_hparams.json') as f:
         hparams = json.load(f)
-    
-    # pl.seed_everything(hparams['seed'])
 
     with open(labeled_file_path) as f:
         num_labeled = len(f.readlines())
@@ -66,6 +65,8 @@ if __name__ == "__main__":
     hparams['total_steps_teacher'] = hparams['total_steps_teacher_initial'] + args.stage * hparams['total_steps_teacher_stage_inc']
     hparams['total_steps_student'] = hparams['total_steps_student_initial'] + args.stage * hparams['total_steps_student_stage_inc']
     hparams['batches_per_epoch'] = int((num_labeled + hparams['batch_size'] - 1) / hparams['batch_size'])
+
+    pl.seed_everything(hparams['seed'])
 
     best_version_name = ''
     best_val_loss = 10000000
