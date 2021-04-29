@@ -13,6 +13,7 @@ from PIL import Image
 from PIL.ExifTags import TAGS
 from tqdm import tqdm
 import csv
+import random
 import json
 import numpy as np
 from collections import defaultdict
@@ -192,7 +193,7 @@ def main(_):
             with open(os.path.join(current_task_dir, 'stage{}.json'.format(stage)), 'w') as f:
                 json.dump(class_id_to_name, f)
 
-            if True:
+            if stage >= 3:
                 cmd = 'python run_one_checkpoint.py --output_csv {} --session_id {} --dataset_name {} --phase {} --stage {} --class_num {}'.format(output_csv, task['session_token'], task['session']['Session_Status']['current_dataset']['name'], phase, stage, len(class_id_to_name.keys()))
                 print("Starting: {}".format(cmd))
                 os.system(cmd)
