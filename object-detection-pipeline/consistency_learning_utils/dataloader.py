@@ -7,7 +7,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import Compose, ToTensor, ToPILImage
 from PIL import Image
 
-# from .helpers import autoaugment
+from .helpers import autoaugment
 # from .helpers.transforms import RandomErasing
 
 class ConcatDataset(Dataset):
@@ -133,8 +133,8 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
     ])
 
     strong_augment_transform = Compose([
-        # ToPILImage(),
-        # autoaugment.CIFAR10Policy(),
+        ToPILImage(),
+        autoaugment.CIFAR10Policy(),
         ToTensor()
     ])
 
