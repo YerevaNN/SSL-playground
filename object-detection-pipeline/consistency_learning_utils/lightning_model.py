@@ -470,7 +470,7 @@ class STAC(pl.LightningModule):
         return {'loss': loss}
 
     def student_training_step(self, batch_list):
-        self.update_teacher_EMA(self.hparams['EMA_keep_rate'])
+        self.update_teacher_EMA(keep_rate=self.hparams['EMA_keep_rate'])
 
         sup_batch, unsup_batch = batch_list
         self.student.set_is_supervised(True)
@@ -684,6 +684,8 @@ class STAC(pl.LightningModule):
 
         for pg in optimizer.param_groups:
             pg['lr'] = lr_scale * self.lr
+            if not self.onTeacher:
+                pg['weight_decay'] = 0
 
         # update params
         optimizer.step(closure=optimizer_closure)
