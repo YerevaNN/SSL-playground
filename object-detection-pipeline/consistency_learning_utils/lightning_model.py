@@ -12,6 +12,7 @@ import torch.optim as optim
 from torch import nn
 from collections import OrderedDict
 from pytorch_lightning import Trainer
+from torchvision.utils import save_image
 
 from mean_average_precision import MetricBuilder
 
@@ -193,7 +194,9 @@ class STAC(pl.LightningModule):
         with open("./logits.json", "w+") as jsonFile:
             jsonFile.write('')
 
-        self.mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
+        self.student_mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
+                                                         num_classes=self.hparams['class_num'])
+        self.teacher_mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
                                                          num_classes=self.hparams['class_num'])
         self.prediction_cache = {}
 
@@ -390,6 +393,8 @@ class STAC(pl.LightningModule):
 
         self.teacher.eval()
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+        save_image(unlabeled_x[0], 'unlabeled.png')
+        save_image(augmented_x[0], 'augmented.png')
 
         to_train = True
 
@@ -477,11 +482,11 @@ class STAC(pl.LightningModule):
         unsup_loss = self.student_unsupervised_step(unsup_batch)
 
         sup_loss = self.frcnn_loss(sup_y_hat)
-        # loss = sup_loss + self.lam * unsup_loss
-        if self.global_step % 2 == 0 or unsup_loss.sum().item() == 0.0:
-            loss = sup_loss
-        else:
-            loss = unsup_loss
+        loss = sup_loss + self.lam * unsup_loss
+        # if self.global_step % 20 < 10 or unsup_loss.sum().item() == 0.0:
+        #     loss = sup_loss
+        # else:
+        #     loss = unsup_loss
         teacher_weight = self.teacher.roi_heads.box_predictor.cls_score.weight.sum().item()
         self.logger.experiment.track(teacher_weight, name='teacher_weight',
                                          model=self.onTeacher, stage=self.stage)           
@@ -524,22 +529,30 @@ class STAC(pl.LightningModule):
 
         x, y, image_paths = batch
 
-        y_hat = self.forward(x, image_paths)
+        student_y_hat = self.student_forward(x, image_paths=image_paths)
+        teacher_y_hat = self.teacher_forward(x, image_paths=image_paths)
 
-        pred_for_mAP = []
-        truth_for_mAP = []
-
-        for i in range(len(y_hat)):
-            pred_for_mAP = []
+        for i in range(len(student_y_hat)):
+            student_pred_for_mAP = []
+            teacher_pred_for_mAP = []
             truth_for_mAP = []
             img_id = image_paths[i]
 
-            boxes = y_hat[i]['boxes'].cpu().numpy()
-            labels = y_hat[i]['labels'].cpu().numpy()
-            scores = y_hat[i]['scores'].cpu().numpy()
+            student_boxes = student_y_hat[i]['boxes'].cpu().numpy()
+            student_labels = student_y_hat[i]['labels'].cpu().numpy()
+            student_scores = student_y_hat[i]['scores'].cpu().numpy()
 
-            for (j, box) in enumerate(boxes):
-                pred_for_mAP.append([box[0], box[1], box[2], box[3], labels[j], scores[j]])
+            teacher_boxes = teacher_y_hat[i]['boxes'].cpu().numpy()
+            teacher_labels = teacher_y_hat[i]['labels'].cpu().numpy()
+            teacher_scores = teacher_y_hat[i]['scores'].cpu().numpy()
+
+            for (j, box) in enumerate(student_boxes):
+                student_pred_for_mAP.append([box[0], box[1], box[2], box[3],
+                                             student_labels[j], student_scores[j]])
+
+            for (j, box) in enumerate(teacher_boxes):
+                teacher_pred_for_mAP.append([box[0], box[1], box[2], box[3],
+                                             teacher_labels[j], teacher_scores[j]])
 
             for box in y[i]:
                 xmin = int(box['bndbox']['xmin'])
@@ -548,9 +561,10 @@ class STAC(pl.LightningModule):
                 ymax = int(box['bndbox']['ymax'])
                 truth_for_mAP.append([xmin, ymin, xmax, ymax, int(box['label']), 0, 0])
 
-            self.mAP.add(np.array(pred_for_mAP), np.array(truth_for_mAP))
+            self.student_mAP.add(np.array(student_pred_for_mAP), np.array(truth_for_mAP))
+            self.teacher_mAP.add(np.array(teacher_pred_for_mAP), np.array(truth_for_mAP))
             self.prediction_cache[img_id] = {
-                "pred": pred_for_mAP,
+                "pred": student_pred_for_mAP,
                 "truth": truth_for_mAP
             }
 
@@ -560,20 +574,33 @@ class STAC(pl.LightningModule):
         self.validation_counter += 1
 
         # mAP1 = self.mAP.value(iou_thresholds=0.5, recall_thresholds=np.arange(0., 1.1, 0.1))['mAP']
-        mAP2 = self.mAP.value(iou_thresholds=0.5)['mAP']
         ious = np.arange(0.5, 1.0, 0.05)
-        mAP3 = self.mAP.value(iou_thresholds=ious,
+        student_mAP2 = self.student_mAP.value(iou_thresholds=0.5)['mAP']
+        student_mAP3 = self.student_mAP.value(iou_thresholds=ious,
                               recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
 
-        self.logger.experiment.track(float(mAP2), name='map2', model=self.onTeacher, stage=self.stage)
-        self.logger.experiment.track(float(mAP3['mAP']), name='mAP5095', model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(float(student_mAP2), name='map2', model=False, stage=self.stage)
+        self.logger.experiment.track(float(student_mAP3['mAP']), name='mAP5095', model=False, stage=self.stage)
         for iou in ious:
             self.logger.experiment.track(
-                float(np.mean([x['ap'] for x in mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
-                model=self.onTeacher, stage=self.stage)
+                float(np.mean([x['ap'] for x in student_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
+                model=False, stage=self.stage)
+        teacher_mAP2 = self.teacher_mAP.value(iou_thresholds=0.5)['mAP']
+        teacher_mAP3 = self.teacher_mAP.value(iou_thresholds=ious,
+                              recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
+
+        self.logger.experiment.track(float(teacher_mAP2), name='map2', model=True, stage=self.stage)
+        self.logger.experiment.track(float(teacher_mAP3['mAP']), name='mAP5095', model=True, stage=self.stage)
+        for iou in ious:
+            self.logger.experiment.track(
+                float(np.mean([x['ap'] for x in teacher_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
+                model=True, stage=self.stage)
 
         # val_loss as a surrogate for mAP
-        val_loss = 1 - mAP2
+        val_loss = 1 - student_mAP2
+        if self.onTeacher:
+            val_loss = 1 - teacher_mAP2
+
         print('mAP: ', 1 - val_loss)
         print('best_mAP: ', 1 - self.best_val_loss)
 
@@ -583,7 +610,9 @@ class STAC(pl.LightningModule):
             self.best_student_val = min(self.best_student_val, val_loss)
         self.best_val_loss = min(self.best_val_loss, val_loss)
 
-        self.mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
+        self.student_mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
+                                                         num_classes=self.hparams['class_num'])
+        self.teacher_mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
                                                          num_classes=self.hparams['class_num'])
 
         self.store_predictions()
