@@ -389,7 +389,8 @@ class STAC(pl.LightningModule):
 
         to_train = True
 
-        total_num_pseudo_boxes = 0
+        pseudo_boxes_all = 0
+        pseudo_boxes_confident = 0
 
         target = []
         for i, sample_pred in enumerate(unlab_pred):
@@ -403,7 +404,7 @@ class STAC(pl.LightningModule):
             for j in range(len(labels)):
                 if scores[j] < self.confidence_threshold:
                     index.append(j)
-            total_num_pseudo_boxes += len(boxes)
+            pseudo_boxes_all += len(boxes)
             if len(boxes) != 0 and len(index) == len(boxes):
                 del(index[0])
 
@@ -412,7 +413,7 @@ class STAC(pl.LightningModule):
             scores = np.delete(scores, index)
 
             # TODO move to the device of the model
-
+            pseudo_boxes_confident += len(boxes)
             if len(boxes) == 0:
                 to_train = False
                 break
@@ -437,9 +438,12 @@ class STAC(pl.LightningModule):
         #                                  stage=self.stage)
         #     break
 
-        self.logger.experiment.track(total_num_pseudo_boxes / len(unlab_pred),
-                                     name='avg_pseudo_boxes', model=self.onTeacher,
-                                     stage=self.stage)
+        self.logger.experiment.track(
+            pseudo_boxes_all / len(unlab_pred),
+            name='pseudo_boxes_all', model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(
+            pseudo_boxes_confident / len(unlab_pred),
+            name='pseudo_boxes_confident', model=self.onTeacher, stage=self.stage)
         return unsup_loss
 
     def teacher_training_step(self, batch_list):
