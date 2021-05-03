@@ -192,11 +192,18 @@ class STAC(pl.LightningModule):
         with open("./logits.json", "w+") as jsonFile:
             jsonFile.write('')
 
+        self.custom_validation_start()
+
+
+    def custom_validation_start(self):
         self.student_mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
                                                          num_classes=self.hparams['class_num'])
         self.teacher_mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
                                                          num_classes=self.hparams['class_num'])
         self.prediction_cache = {}
+        self.validation_student_boxes = 0
+        self.validation_teacher_boxes = 0
+        self.validation_images = 0
 
 
     def set_test_with_student(self, val):
@@ -528,7 +535,11 @@ class STAC(pl.LightningModule):
         student_y_hat = self.student_forward(x, image_paths=image_paths)
         teacher_y_hat = self.teacher_forward(x, image_paths=image_paths)
 
-        for i in range(len(student_y_hat)):
+        batch_size = len(student_y_hat)
+
+        self.validation_images += batch_size
+
+        for i in range(batch_size):
             student_pred_for_mAP = []
             teacher_pred_for_mAP = []
             truth_for_mAP = []
@@ -559,6 +570,8 @@ class STAC(pl.LightningModule):
 
             self.student_mAP.add(np.array(student_pred_for_mAP), np.array(truth_for_mAP))
             self.teacher_mAP.add(np.array(teacher_pred_for_mAP), np.array(truth_for_mAP))
+            self.validation_teacher_boxes += len(teacher_pred_for_mAP)
+            self.validation_student_boxes += len(student_pred_for_mAP)
             self.prediction_cache[img_id] = {
                 "pred": student_pred_for_mAP,
                 "truth": truth_for_mAP
@@ -606,13 +619,16 @@ class STAC(pl.LightningModule):
             self.best_student_val = min(self.best_student_val, val_loss)
         self.best_val_loss = min(self.best_val_loss, val_loss)
 
-        self.student_mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
-                                                         num_classes=self.hparams['class_num'])
-        self.teacher_mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
-                                                         num_classes=self.hparams['class_num'])
-
         self.store_predictions()
-        self.prediction_cache = {}  # reset
+
+        self.logger.experiment.track(
+            self.validation_teacher_boxes / self.validation_images,
+            name='val_teacher_boxes', model=True, stage=self.stage)
+        self.logger.experiment.track(
+            self.validation_student_boxes / self.validation_images,
+            name='val_student_boxes', model=False, stage=self.stage)
+
+        self.custom_validation_start()
 
         return {
             'val_loss': -self.validation_counter
