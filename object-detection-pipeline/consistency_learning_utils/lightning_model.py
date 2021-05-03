@@ -141,8 +141,6 @@ class STAC(pl.LightningModule):
         self.last_unsupervised_loss = 0
         self.training_map = 1
         self.best_teacher_val = 1000
-        self.total_num_pseudo_boxes = 0
-        self.total_num_images = 0
         self.best_student_val = 1000
         self.best_val_loss = 10000000
         self.validation_counter = 0
@@ -225,15 +223,8 @@ class STAC(pl.LightningModule):
         actual_dict = {k[8:]: v for k, v in best_dict['state_dict'].items() if k.startswith('teacher')}
         self.teacher.load_state_dict(actual_dict)
 
-    def copy_student_from_best_teacher(self):
-        checkpoint_name = ''
-        for ckpt_name in os.listdir(self.save_dir_name_teacher):
-            if ckpt_name.endswith('ckpt'):
-                checkpoint_name = ckpt_name
-                break
-        checkpoint_path = os.path.join(self.save_dir_name_teacher, checkpoint_name)
-        best_dict = torch.load(checkpoint_path)
-        actual_dict = {k[8:]: v for k, v in best_dict['state_dict'].items() if k.startswith('teacher')}
+    def copy_student_from_current_teacher(self):
+        actual_dict = self.teacher.state_dict()
         self.student.load_state_dict(actual_dict)
 
     def load_checkpoint_teacher(self, checkpoint_path):
@@ -393,10 +384,12 @@ class STAC(pl.LightningModule):
 
         self.teacher.eval()
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
-        save_image(unlabeled_x[0], 'unlabeled.png')
-        save_image(augmented_x[0], 'augmented.png')
+        # save_image(unlabeled_x[0], 'unlabeled.png')
+        # save_image(augmented_x[0], 'augmented.png')
 
         to_train = True
+
+        total_num_pseudo_boxes = 0
 
         target = []
         for i, sample_pred in enumerate(unlab_pred):
@@ -410,8 +403,7 @@ class STAC(pl.LightningModule):
             for j in range(len(labels)):
                 if scores[j] < self.confidence_threshold:
                     index.append(j)
-            self.total_num_images += 1
-            self.total_num_pseudo_boxes += len(boxes)
+            total_num_pseudo_boxes += len(boxes)
             if len(boxes) != 0 and len(index) == len(boxes):
                 del(index[0])
 
@@ -445,9 +437,9 @@ class STAC(pl.LightningModule):
         #                                  stage=self.stage)
         #     break
 
-        self.logger.experiment.track(self.total_num_pseudo_boxes / self.total_num_images,
-                                         name='avg_pseudo_boxes', model=self.onTeacher,
-                                         stage=self.stage)
+        self.logger.experiment.track(total_num_pseudo_boxes / len(unlab_pred),
+                                     name='avg_pseudo_boxes', model=self.onTeacher,
+                                     stage=self.stage)
         return unsup_loss
 
     def teacher_training_step(self, batch_list):
@@ -708,10 +700,11 @@ class STAC(pl.LightningModule):
         self.teacher_trainer.fit(self)
         print("Finished teacher")
 
-        self.load_best_teacher() # TODO I do not think this will always work
+        # self.load_best_teacher() # TODO I do not think this will always work
+        # The best teacher is the last one, as we do not know how to measure what it the best one
 
         if self.stage != 7:
-            self.copy_student_from_best_teacher()
+            self.copy_student_from_current_teacher()
             for param in self.teacher.parameters():
                 param.requires_grad = False
             # opt = self.optimizers()[0]
