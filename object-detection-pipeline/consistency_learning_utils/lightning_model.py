@@ -65,7 +65,7 @@ class SkipConnection(nn.Module):
         return torch.cat((x, z), dim=-1)
 
 
-def model_changed_classifier(reuse_classifier=False, initialize=False, class_num=20):
+def model_changed_classifier(reuse_classifier=False, initialize=False, class_num=20, gamma=1):
     """
 
     Args:
@@ -88,11 +88,13 @@ def model_changed_classifier(reuse_classifier=False, initialize=False, class_num
 
     if reuse_classifier is False:
         model = fasterrcnn_resnet50_fpn(pretrained=pretrained, progress=True,
-                                        num_classes=class_num+1, pretrained_backbone=backbone)
+                                        num_classes=class_num+1,
+                                        pretrained_backbone=backbone, gamma=gamma)
         return model
 
     model = fasterrcnn_resnet50_fpn(pretrained=pretrained, progress=True,
-                                    num_classes=91, pretrained_backbone=backbone)
+                                    num_classes=91,
+                                    pretrained_backbone=backbone, gamma=gamma)
 
     if reuse_classifier == 'add':
         old_cls_score = model.roi_heads.box_predictor.cls_score
@@ -169,12 +171,14 @@ class STAC(pl.LightningModule):
         self.teacher = model_changed_classifier(
             initialize=self.hparams['initialization'],
             reuse_classifier=self.hparams['reuse_classifier'],
-            class_num=self.hparams['class_num'])
+            class_num=self.hparams['class_num'],
+            gamma=self.hparams['gamma'])
 
         self.student = model_changed_classifier(
             initialize=self.hparams['initialization'],
             reuse_classifier=self.hparams['reuse_classifier'],
-            class_num=self.hparams['class_num'])
+            class_num=self.hparams['class_num'],
+            gamma=self.hparams['gamma'])
 
         self.teacher.cuda()
         self.student.cuda()

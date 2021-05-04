@@ -151,6 +151,7 @@ class FasterRCNN(GeneralizedRCNN):
                  rpn_nms_thresh=0.7,
                  rpn_fg_iou_thresh=0.7, rpn_bg_iou_thresh=0.3,
                  rpn_batch_size_per_image=256, rpn_positive_fraction=0.5,
+                 gamma=1,
                  # Box parameters
                  box_roi_pool=None, box_head=None, box_predictor=None,
                  box_score_thresh=0.05, box_nms_thresh=0.5, box_detections_per_img=100,
@@ -222,7 +223,8 @@ class FasterRCNN(GeneralizedRCNN):
             box_fg_iou_thresh, box_bg_iou_thresh,
             box_batch_size_per_image, box_positive_fraction,
             bbox_reg_weights,
-            box_score_thresh, box_nms_thresh, box_detections_per_img)
+            box_score_thresh, box_nms_thresh, box_detections_per_img,
+            gamma=gamma)
 
         if image_mean is None:
             image_mean = [0.485, 0.456, 0.406]

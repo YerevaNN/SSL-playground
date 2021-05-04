@@ -10,11 +10,6 @@ import torch
 import json
 from torch import nn
 
-def frcnn_loss(res):
-        final_loss = res['loss_classifier'] + 10 * res['loss_box_reg'] + \
-                     res['loss_objectness'] + res['loss_rpn_box_reg']
-        return final_loss
-
 
 class GeneralizedRCNN(nn.Module):
     """
