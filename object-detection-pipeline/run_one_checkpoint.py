@@ -21,6 +21,7 @@ parser.add_argument('--confidence_threshold', type=float, default=None)
 parser.add_argument('--weight_decay', type=float, default=None)
 parser.add_argument('--seed', type=int, default=None)
 parser.add_argument('--EMA_keep_rate', type=float, default=None)
+parser.add_argument('--gamma', type=float, default=None)
 
 args = parser.parse_args()
 
@@ -58,7 +59,7 @@ if __name__ == "__main__":
     argsdict = vars(args)
 
     for key in ['experiment_name', 'learning_rate', 'gradient_clip_threshold',
-                'confidence_threshold', 'weight_decay', 'seed', 'EMA_keep_rate']:
+                'confidence_threshold', 'weight_decay', 'seed', 'EMA_keep_rate', 'gamma']:
         if key in argsdict and argsdict[key] is not None:
             print("Overriding {} to {}".format(key, argsdict[key]))
             hparams[key] = argsdict[key]
