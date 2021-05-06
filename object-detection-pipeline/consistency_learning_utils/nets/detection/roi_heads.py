@@ -12,11 +12,9 @@ from torchvision.ops import roi_align
 from . import _utils as det_utils
 
 def focal_loss(x, target, gamma):
-    target_one_hot = torch.zeros(x.shape, device=x.device, dtype=x.dtype)
-    target_one_hot = target_one_hot.scatter_(0, target.unsqueeze(1), 1.0)
-    p_t = torch.where(target_one_hot == 1, x, 1-x)
+    ce = F.cross_entropy(x, target)
+    p_t = torch.exp(-ce)
     fl = - 1 * (1 - p_t) ** gamma * torch.log(p_t)
-    fl = torch.where(target_one_hot == 1, fl, fl)
     return fl.mean()
 
 
@@ -39,6 +37,7 @@ def fastrcnn_loss(class_logits, box_regression, labels, regression_targets, gamm
     regression_targets = torch.cat(regression_targets, dim=0)
 
     classification_loss = focal_loss(class_logits, labels, gamma)
+
 
     # get indices that correspond to the regression targets for
     # the corresponding ground truth labels, to be used with
