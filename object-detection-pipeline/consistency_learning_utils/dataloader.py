@@ -79,6 +79,10 @@ class MyDataset(Dataset):
                 box['bndbox']['ymin'] = int(ymin)
                 box['bndbox']['xmax'] = int(xmax)
                 box['bndbox']['ymax'] = int(ymax)
+                if box['bndbox']['ymax'] <= box['bndbox']['ymin']:
+                    box['bndbox']['ymax'] += 1
+                if box['bndbox']['xmax'] <= box['bndbox']['xmin']:
+                    box['bndbox']['xmax'] += 1
                 target.append(box)
 
         return target
