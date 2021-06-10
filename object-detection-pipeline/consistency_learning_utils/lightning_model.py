@@ -494,12 +494,14 @@ class STAC(pl.LightningModule):
         #     loss = sup_loss
         # else:
         #     loss = unsup_loss
-        teacher_weight = self.teacher.roi_heads.box_predictor.cls_score.weight.sum().item()
-        self.logger.experiment.track(teacher_weight, name='teacher_weight',
-                                         model=self.onTeacher, stage=self.stage)           
-        student_weight = self.student.roi_heads.box_predictor.cls_score.weight.sum().item()
-        self.logger.experiment.track(student_weight, name='student_weight',
-                                         model=self.onTeacher, stage=self.stage)            
+
+        # teacher_weight = self.teacher.roi_heads.box_predictor.cls_score.weight.sum().item()
+        # self.logger.experiment.track(teacher_weight, name='teacher_weight',
+        #                                  model=self.onTeacher, stage=self.stage)
+        # student_weight = self.student.roi_heads.box_predictor.cls_score.weight.sum().item()
+        # self.logger.experiment.track(student_weight, name='student_weight',
+        #                                  model=self.onTeacher, stage=self.stage)
+
         self.logger.experiment.track(sup_y_hat['loss_classifier'].item(), name='loss_classifier',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(sup_y_hat['loss_box_reg'].item(), name='loss_box_reg',
