@@ -684,24 +684,35 @@ class STAC(pl.LightningModule):
     def optimizer_step(self, epoch: int = None, batch_idx: int = None, optimizer = None,
                        optimizer_idx: int = None, optimizer_closure = None, on_tpu: bool = None,
                        using_native_amp: bool = None, using_lbfgs: bool = None):
+        # if self.hparams['lr_schedule'] == 'constant':
+        #     lr_scale = 1.
+        # elif self.hparams['lr_schedule'] == 'warmup':
+        #     if self.trainer.global_step < self.warmup_steps:
+        #         lr_scale = min(1., float(self.trainer.global_step + 1) / self.warmup_steps)
+        #     else:
+        #         t_steps = self.hparams['total_steps_student']
+        #         if self.onTeacher:
+        #             t_steps = self.hparams['total_steps_teacher']
+        #         lr_scale = 1 - (self.trainer.global_step - self.warmup_steps) / (t_steps - self.warmup_steps)
+        # else:
+        #     raise NotImplementedError
+        
         if self.hparams['lr_schedule'] == 'constant':
-            lr_scale = 1.
-        elif self.hparams['lr_schedule'] == 'warmup':
+            curLR = self.lr
+        elif self.hparams['lr_schedule'] == 'warmup' or self.hparams['lr_schedule'] == 'warmupWithDrop':
             if self.trainer.global_step < self.warmup_steps:
-                lr_scale = min(1., float(self.trainer.global_step + 1) / self.warmup_steps)
+                curLR = self.lr * min(1., float(self.trainer.global_step + 1) / self.warmup_steps)
+            elif self.trainer.global_step < self.hparams['drop_steps']:
+                curLR = self.lr
             else:
-                t_steps = self.hparams['total_steps_student']
-                if self.onTeacher:
-                    t_steps = self.hparams['total_steps_teacher']
-                lr_scale = 1 - (self.trainer.global_step - self.warmup_steps) / (t_steps - self.warmup_steps)
+                curLR = self.hparams['lr_after_drop']
         else:
             raise NotImplementedError
 
-        self.logger.experiment.track(lr_scale, name='lr_scale',
-                                     model=self.onTeacher, stage=self.stage)
+        self.logger.experiment.track(curLR, name='lr', model=self.onTeacher, stage=self.stage)
 
         for pg in optimizer.param_groups:
-            pg['lr'] = lr_scale * self.lr
+            pg['lr'] = curLR
             if not self.onTeacher:
                 pg['weight_decay'] = 0
 
