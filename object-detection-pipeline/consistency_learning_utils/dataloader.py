@@ -5,6 +5,7 @@ import os
 from torch.utils.data import Dataset, DataLoader
 
 from torchvision.transforms import Compose, ToTensor, ToPILImage
+from .helpers.cutout import Cutout
 from PIL import Image
 
 from .helpers import autoaugment
@@ -133,13 +134,16 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
        train_unlabelled_ds = train_labelled_ds 
 
     weak_augment_transform = Compose ([
-        ToTensor()
+        ToTensor(),
     ])
 
     strong_augment_transform = Compose([
         ToPILImage(),
         autoaugment.CIFAR10Policy(),
-        ToTensor()
+        ToTensor(),
+        Cutout(0.7, (0.05, 0.2), (0.3, 3.3)),
+        Cutout(0.5, (0.02, 0.2), (0.1, 6)),
+        Cutout(0.3, (0.02, 0.2), (0.05, 8))
     ])
 
     no_transform = Compose([

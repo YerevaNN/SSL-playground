@@ -705,7 +705,7 @@ class STAC(pl.LightningModule):
             elif self.trainer.global_step < self.hparams['drop_steps']:
                 curLR = self.lr
             else:
-                curLR = self.hparams['lr_after_drop']
+                curLR = self.lr / self.hparams['lr_drop_rate']
         else:
             raise NotImplementedError
 
