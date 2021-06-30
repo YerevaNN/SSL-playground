@@ -579,7 +579,8 @@ class STAC(pl.LightningModule):
             self.validation_teacher_boxes += len(teacher_pred_for_mAP)
             self.validation_student_boxes += len(student_pred_for_mAP)
             self.prediction_cache[img_id] = {
-                "pred": student_pred_for_mAP,
+                "student_pred": student_pred_for_mAP,
+                "teacher_pred": teacher_pred_for_mAP,
                 "truth": truth_for_mAP
             }
 

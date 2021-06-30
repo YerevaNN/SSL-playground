@@ -134,7 +134,7 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
        train_unlabelled_ds = train_labelled_ds 
 
     weak_augment_transform = Compose ([
-        ToTensor(),
+        ToTensor()
     ])
 
     strong_augment_transform = Compose([
