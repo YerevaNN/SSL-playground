@@ -5,8 +5,9 @@ from torch.utils.data import Subset, Dataset, DataLoader
 
 from torchvision.transforms import Compose, ToTensor, Normalize, Pad, RandomCrop, RandomHorizontalFlip
 
-from SSL_playground.helpers import autoaugment
+from SSL_playground.helpers import autoaugment, randaugment, cutout
 from SSL_playground.helpers.transforms import RandomErasing
+from torchvision import transforms
 
 def set_seed(seed):
     import random
@@ -18,7 +19,7 @@ def set_seed(seed):
     np.random.seed(seed)
 
 
-def get_train_test_loaders(train_ds, test_ds, num_classes, num_labelled_samples, batch_size, num_workers,
+def get_train_test_loaders(train_ds, val_ds, test_ds, num_classes, num_labelled_samples, batch_size, num_workers,
                            unlabelled_batch_size=None, pin_memory=True):
 
     n_valid = 0.2
@@ -50,7 +51,11 @@ def get_train_test_loaders(train_ds, test_ds, num_classes, num_labelled_samples,
     unsupervised_train_transformation = Compose([
         Pad(4),
         RandomCrop(32, fill=128),
-        autoaugment.CIFAR10Policy()
+        # autoaugment.CIFAR10Policy()\
+        ToTensor(),
+        cutout.Cutout(1, 16),
+        transforms.ToPILImage()
+        # randaugment.RandAugmentPC(2, 10)
     ])
     unsup_train_transformation =Compose([
         ToTensor(),
@@ -60,6 +65,8 @@ def get_train_test_loaders(train_ds, test_ds, num_classes, num_labelled_samples,
     train_labelled_ds = TransformedDataset(train_labelled_ds,
                                            transform_fn=lambda dp: (train_transform(dp[0]), dp[1]), shuffle=True,
                                            shuffle_seed=1)
+    val_ds = TransformedDataset(val_ds, transform_fn=lambda dp: (test_transform(dp[0]), dp[1]), shuffle=True,
+                                 shuffle_seed=1)
     test_ds = TransformedDataset(test_ds, transform_fn=lambda dp: (test_transform(dp[0]), dp[1]), shuffle=True,
                                  shuffle_seed=1)
 
@@ -80,10 +87,12 @@ def get_train_test_loaders(train_ds, test_ds, num_classes, num_labelled_samples,
     train_unlabelled_loader = DataLoader(train_unlabelled_ds, batch_size=unlabelled_batch_size, num_workers=num_workers,
                                          pin_memory=pin_memory, shuffle=True)
 
+    val_loader = DataLoader(val_ds, batch_size=batch_size * 2, num_workers=num_workers, pin_memory=pin_memory,
+                             shuffle=True)
     test_loader = DataLoader(test_ds, batch_size=batch_size * 2, num_workers=num_workers, pin_memory=pin_memory,
                              shuffle=True)
 
-    return train_labelled_loader, train_unlabelled_loader, test_loader
+    return train_labelled_loader, train_unlabelled_loader, val_loader, test_loader
 
 class TransformedDataset(Dataset):
 
@@ -124,9 +133,10 @@ class UDATransform:
             aug_dp = dp
         _, label = dp
         tdp1 = self.original_transform(dp)
-        tdp2, vector = self.augmentation_transform(aug_dp)
+        # tdp2, vector = self.augmentation_transform(aug_dp)
+        tdp2 = self.augmentation_transform(aug_dp)
         tdp2 = self.imagetransform(tdp2)
-        return (tdp1, label), (tdp2, vector)
+        return (tdp1, label), tdp2
 
 def stratified_train_labelled_unlabelled_split(ds, num_labelled_samples, num_classes, seed=None):
     labelled_indices = []

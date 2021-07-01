@@ -1,6 +1,6 @@
 {
-    "experiment_name": "cifar_uda",
-    "version_name": "1.0.0",
+    "experiment_name": "cifar_mpl_updated",
+    "version_name": "1.0.1",
 
     "dataset": "CIFAR10",
     "data_path": ".",
@@ -11,16 +11,17 @@
     "number_of_classes": 10,
 
     "momentum": 0.9,
-    "weight_decay": 1e-4,
+    "weight_decay": 0.0005,
+    "batch_norm_decay": 0.99,
     "batch_size": 32,
-    "unlabelled_batch_size": 368,
-    "num_workers": 0,
+    "unlabelled_batch_size": 336,
+    "num_workers": 4,
 
     "num_epochs": 200,
 
-    "learning_rate": 0.03,
+    "learning_rate": 0.01,
     "min_lr_ratio": 0.004,
-    "num_warmup_steps": 0,
+    "num_warmup_steps": 4,
 
     "num_labelled_samples": 4000,
     "consistency_lambda": 1,
@@ -32,5 +33,7 @@
     "TSA_proba_max": 1.0,
 
     "no_UDA": "False",
-    "with_SWA": "False"
+    "with_SWA": "False",
+
+    "MPL_threshold": 0.95
 }
