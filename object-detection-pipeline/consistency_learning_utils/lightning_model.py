@@ -147,7 +147,6 @@ class STAC(pl.LightningModule):
         self.best_student_val = 1000
         self.best_val_loss = 10000000
         self.validation_counter = 0
-        self.warmup_steps = self.hparams['warmup_steps']
         self.validation_part = self.hparams["validation_part"]
         self.lam = self.hparams['consistency_lambda']
         self.momentum = self.hparams['momentum']
@@ -301,7 +300,8 @@ class STAC(pl.LightningModule):
                                          self.hparams['batch_size'],
                                          self.hparams['num_workers'],
                                          stage=self.stage,
-                                         validation_part=self.validation_part)
+                                         validation_part=self.validation_part,
+                                         augmentation=self.hparams['augmentation'])
         self.train_loader, self.test_loader, self.val_loader = loaders
 
     def make_teacher_trainer(self):
@@ -688,28 +688,27 @@ class STAC(pl.LightningModule):
     def optimizer_step(self, epoch: int = None, batch_idx: int = None, optimizer = None,
                        optimizer_idx: int = None, optimizer_closure = None, on_tpu: bool = None,
                        using_native_amp: bool = None, using_lbfgs: bool = None):
-        # if self.hparams['lr_schedule'] == 'constant':
-        #     lr_scale = 1.
-        # elif self.hparams['lr_schedule'] == 'warmup':
-        #     if self.trainer.global_step < self.warmup_steps:
-        #         lr_scale = min(1., float(self.trainer.global_step + 1) / self.warmup_steps)
-        #     else:
-        #         t_steps = self.hparams['total_steps_student']
-        #         if self.onTeacher:
-        #             t_steps = self.hparams['total_steps_teacher']
-        #         lr_scale = 1 - (self.trainer.global_step - self.warmup_steps) / (t_steps - self.warmup_steps)
-        # else:
-        #     raise NotImplementedError
-        
-        if self.hparams['lr_schedule'] == 'constant':
-            curLR = self.lr
-        elif self.hparams['lr_schedule'] == 'warmup' or self.hparams['lr_schedule'] == 'warmupWithDrop':
-            if self.trainer.global_step < self.warmup_steps:
-                curLR = self.lr * min(1., float(self.trainer.global_step + 1) / self.warmup_steps)
-            elif self.trainer.global_step < self.hparams['drop_steps']:
-                curLR = self.lr
+        lr = self.hparams['learning_rate']
+        lr_schedule = self.hparams['lr_schedule']
+        drop_steps = self.hparams['lr_drop_steps']
+        drop_rate = self.hparams['lr_drop_rate']
+        warmup_steps = self.hparams['warmup_steps']
+        if not self.onTeacher:
+            lr = self.hparams['student_learning_rate']
+            lr_schedule = self.hparams['student_lr_schedule']
+            drop_steps = self.hparams['student_lr_drop_steps']
+            drop_rate = self.hparams['student_lr_drop_rate']
+            warmup_steps = self.hparams['student_warmup_steps']
+
+        if lr_schedule == 'constant':
+            curLR = lr
+        elif lr_schedule == 'warmup' or lr_schedule == 'warmupWithDrop':
+            if self.trainer.global_step < warmup_steps:
+                curLR = lr * min(1., float(self.trainer.global_step + 1) / warmup_steps)
+            elif self.trainer.global_step < drop_steps or lr_schedule != 'warmupWithDrop':
+                curLR = lr
             else:
-                curLR = self.lr / self.hparams['lr_drop_rate']
+                curLR = lr / drop_rate
         else:
             raise NotImplementedError
 
