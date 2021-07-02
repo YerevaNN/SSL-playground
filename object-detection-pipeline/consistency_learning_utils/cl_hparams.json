@@ -3,7 +3,8 @@
 
     "model": "fasterrcnn",
     "initialization": "backbone",
-    "reuse_classifier": "add",
+    "reuse_classifier": false,
+    "teacher_init_path": "./session_data/JhJdB8XzYhrzOqG6wtxa/base/voc2009_base_3_from_coco_0_aug2lr001gc1c095wd0ema0996gamm0s3/teacher/last.ckpt",
 
     "total_steps_teacher_initial": 40000,
     "total_steps_student_initial": 40000,

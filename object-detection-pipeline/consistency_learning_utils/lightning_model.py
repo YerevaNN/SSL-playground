@@ -729,16 +729,20 @@ class STAC(pl.LightningModule):
         return optimizer
 
     def fit_model(self):
-        print("Starting teacher")
-        self.onTeacher = True
-        print("Will train for {} epochs, validate every {} epochs".format(
-            self.hparams['total_steps_teacher'] // self.batches_per_epoch,
-            self.check_val_epochs
-        ))
+        if self.hparams['teacher_init_path'] == False:
+            print("Starting teacher")
+            self.onTeacher = True
+            print("Will train for {} epochs, validate every {} epochs".format(
+                self.hparams['total_steps_teacher'] // self.batches_per_epoch,
+                self.check_val_epochs
+            ))
 
-        self.validation_counter = 0
-        self.teacher_trainer.fit(self)
-        print("Finished teacher")
+            self.validation_counter = 0
+            self.teacher_trainer.fit(self)
+            print("Finished teacher")
+        else:
+            print("Loading teacher model from: {}".format(self.hparams['teacher_init_path']))
+            self.load_checkpoint_teacher(self.hparams['teacher_init_path'])
 
         # self.load_best_teacher() # TODO I do not think this will always work
         # The best teacher is the last one, as we do not know how to measure what it the best one
