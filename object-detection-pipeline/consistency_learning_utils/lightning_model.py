@@ -316,6 +316,7 @@ class STAC(pl.LightningModule):
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
             callbacks=[self.t_checkpoint_callback],
+            num_sanity_val_steps=0,
             logger=self.aim_logger,
             log_every_n_steps=10, progress_bar_refresh_rate=1,
             gradient_clip_val=self.hparams['gradient_clip_threshold'],
@@ -340,6 +341,7 @@ class STAC(pl.LightningModule):
             gpus=-1, checkpoint_callback=True, # what is this?
             callbacks=[checkpoint_callback],
             logger=self.aim_logger,
+            num_sanity_val_steps=0,
             log_every_n_steps=10, progress_bar_refresh_rate=1,
             gradient_clip_val=self.hparams['gradient_clip_threshold'],
             min_steps=self.hparams['total_steps_student'],
