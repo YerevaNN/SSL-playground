@@ -15,6 +15,7 @@ parser.add_argument('--class_num', type=int, default=None)
 parser.add_argument('--output_csv', type=str, default=None)
 
 parser.add_argument('--experiment_name', type=str, default=None)
+parser.add_argument('--teacher_init_path', type=str, default=None)
 parser.add_argument('--learning_rate', type=float, default=None)
 parser.add_argument('--gradient_clip_threshold', type=float, default=None)
 parser.add_argument('--confidence_threshold', type=float, default=None)
@@ -59,7 +60,8 @@ if __name__ == "__main__":
     argsdict = vars(args)
 
     for key in ['experiment_name', 'learning_rate', 'gradient_clip_threshold',
-                'confidence_threshold', 'weight_decay', 'seed', 'EMA_keep_rate', 'gamma']:
+                'confidence_threshold', 'weight_decay', 'seed', 'EMA_keep_rate',
+                'teacher_init_path', 'gamma']:
         if key in argsdict and argsdict[key] is not None:
             print("Overriding {} to {}".format(key, argsdict[key]))
             hparams[key] = argsdict[key]

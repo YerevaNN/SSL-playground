@@ -577,7 +577,8 @@ class STAC(pl.LightningModule):
             self.validation_teacher_boxes += len(teacher_pred_for_mAP)
             self.validation_student_boxes += len(student_pred_for_mAP)
             self.prediction_cache[img_id] = {
-                "pred": student_pred_for_mAP,
+                "student_pred": student_pred_for_mAP,
+                "teacher_pred": teacher_pred_for_mAP,
                 "truth": truth_for_mAP
             }
 
@@ -695,7 +696,7 @@ class STAC(pl.LightningModule):
         else:
             raise NotImplementedError
 
-        self.logger.experiment.track(lr_scale, name='lr_scale',
+        self.logger.experiment.track(lr_scale * self.lr, name='lr',
                                      model=self.onTeacher, stage=self.stage)
 
         for pg in optimizer.param_groups:
@@ -713,17 +714,20 @@ class STAC(pl.LightningModule):
         return optimizer
 
     def fit_model(self):
-        print("Starting teacher")
-        self.onTeacher = True
-        print("Will train for {} epochs, validate every {} epochs".format(
-            self.hparams['total_steps_teacher'] // self.batches_per_epoch,
-            self.check_val_epochs
-        ))
+        if self.hparams['teacher_init_path'] == False:
+            print("Starting teacher")
+            self.onTeacher = True
+            print("Will train for {} epochs, validate every {} epochs".format(
+                self.hparams['total_steps_teacher'] // self.batches_per_epoch,
+                self.check_val_epochs
+            ))
 
-        self.validation_counter = 0
-        self.teacher_trainer.fit(self)
-        print("Finished teacher")
-
+            self.validation_counter = 0
+            self.teacher_trainer.fit(self)
+            print("Finished teacher")
+        else:
+            print("Loading teacher model from: {}".format(self.hparams['teacher_init_path']))
+            self.load_checkpoint_teacher(self.hparams['teacher_init_path'])
         # self.load_best_teacher() # TODO I do not think this will always work
         # The best teacher is the last one, as we do not know how to measure what it the best one
 
