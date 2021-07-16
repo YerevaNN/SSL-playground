@@ -4,7 +4,7 @@
     "model": "fasterrcnn",
     "initialization": "backbone",
     "reuse_classifier": false,
-    "teacher_init_path": "./session_data/JhJdB8XzYhrzOqG6wtxa/base/voc2009_base_3_from_coco_0_aug2lr001gc1c095wd0ema0996gamm0s3/teacher/last.ckpt",
+    "teacher_init_path": false,
 
     "total_steps_teacher_initial": 40000,
     "total_steps_student_initial": 40000,
@@ -23,19 +23,20 @@
     "student_learning_rate": 0.01,
     "student_lr_drop_rate": 10,
     "student_warmup_steps": 1000,
-    "student_lr_drop_steps": 40000,
+    "student_lr_drop_steps": 30000,
     "student_lr_schedule": "warmupWithDrop",
 
-    "augmentation": 1,
+    "augmentation": 0,
     "confidence_threshold": 0.9,
-    "box_score_thresh": 0.05,
+    "box_score_thresh": 0.005,
     "EMA_keep_rate": 0.996,
     "batch_size": 5,
-    "gradient_clip_threshold": 0.5,
+    "gradient_clip_threshold": 1,
+    "gamma": 0,
 
     "seed": 47,
     "validation_part": 0,
-    "num_workers": 8,
+    "num_workers": 0,
 
     "consistency_lambda": 2,
     "consistency_criterion": "KL"
