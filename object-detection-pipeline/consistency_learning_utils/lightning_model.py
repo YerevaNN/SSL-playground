@@ -403,11 +403,12 @@ class STAC(pl.LightningModule):
         # save_image(unlabeled_x[0], 'unlabeled.png')
         # save_image(augmented_x[0], 'augmented.png')
 
-        to_train = True
+        to_train = False
 
         pseudo_boxes_all = 0
         pseudo_boxes_confident = 0
 
+        non_zero_boxes = []
         target = []
         for i, sample_pred in enumerate(unlab_pred):
             boxes = sample_pred['boxes'].cpu()
@@ -421,18 +422,17 @@ class STAC(pl.LightningModule):
                 if scores[j] < self.confidence_threshold:
                     index.append(j)
             pseudo_boxes_all += len(boxes)
-            if len(boxes) != 0 and len(index) == len(boxes):
-                del(index[0])
 
             boxes = np.delete(boxes, index, axis=0)
             labels = np.delete(labels, index)
             scores = np.delete(scores, index)
 
+            if len(boxes) > 0:
+                non_zero_boxes.append(i)
+
             # TODO move to the device of the model
             pseudo_boxes_confident += len(boxes)
-            if len(boxes) == 0:
-                to_train = False
-                break
+
             for j, box in enumerate(boxes):
                 target_boxes.append([box[0], box[1], box[2], box[3]])
                 target_labels.append(labels[j])
@@ -441,8 +441,13 @@ class STAC(pl.LightningModule):
             tensor_labels = torch.tensor(target_labels).long().cuda()
 
             target.append({'boxes': tensor_boxes, 'labels': tensor_labels})
-        if to_train:
-            augment_pred = self.student(augmented_x, target, augmented_image_paths)
+
+        if len(non_zero_boxes):
+            augment_pred = self.student(
+                [x for i, x in enumerate(augmented_x) if i in non_zero_boxes],
+                [y for i, y in enumerate(target) if i in non_zero_boxes],
+                [z for i, z in enumerate(augmented_image_paths) if i in non_zero_boxes]
+            )
             unsup_loss = self.frcnn_loss(augment_pred)
         else:
             unsup_loss = 0 * augmented_x[0].new(1).squeeze()
