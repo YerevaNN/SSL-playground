@@ -29,6 +29,7 @@ parser.add_argument('--initialization', type=str, default=None)
 parser.add_argument('--reuse_classifier', type=str, default=None)
 parser.add_argument('--check_val_steps', type=int, default=None)
 parser.add_argument('--batch_size', type=int, default=None)
+parser.add_argument('--thresholding_method', type=str, default=None)
 
 args = parser.parse_args()
 
@@ -68,7 +69,7 @@ if __name__ == "__main__":
     for key in ['experiment_name', 'learning_rate', 'gradient_clip_threshold',
                 'confidence_threshold', 'weight_decay', 'seed', 'EMA_keep_rate', 'gamma',
                 'initialization', 'reuse_classifier', 'check_val_steps', 'batch_size',
-                'box_score_thresh', 'augmentation', 'teacher_init_path']:
+                'box_score_thresh', 'augmentation', 'teacher_init_path', 'thresholding_method']:
         if key in argsdict and argsdict[key] is not None:
             print("Overriding {} to {}".format(key, argsdict[key]))
             hparams[key] = argsdict[key]

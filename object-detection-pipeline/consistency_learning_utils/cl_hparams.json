@@ -28,6 +28,7 @@
 
     "augmentation": 0,
     "confidence_threshold": 0.9,
+    "thresholding_method": "constant",
     "box_score_thresh": 0.005,
     "EMA_keep_rate": 0.996,
     "batch_size": 5,

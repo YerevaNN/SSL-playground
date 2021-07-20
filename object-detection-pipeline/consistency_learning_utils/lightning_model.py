@@ -141,6 +141,7 @@ class STAC(pl.LightningModule):
         self.lr = self.hparams['learning_rate']
         self.stage = self.hparams['stage']
         self.confidence_threshold = self.hparams['confidence_threshold']
+        self.thresholding_method = self.hparams['thresholding_method']
         self.last_unsupervised_loss = 0
         self.training_map = 1
         self.best_teacher_val = 1000
@@ -410,6 +411,28 @@ class STAC(pl.LightningModule):
 
         non_zero_boxes = []
         target = []
+
+        thresholds = np.zeros(self.hparams['class_num'] + 1)
+        if self.thresholding_method == 'constant':
+            thresholds += self.confidence_threshold
+        elif self.thresholding_method == 'dynamic1':
+            # calculate stats for this batch
+            box_count = 0
+            for sample_pred in unlab_pred:
+                labels = sample_pred['labels'].cpu()
+                scores = sample_pred['scores'].cpu()
+                for l, s in zip(labels, scores):
+                    thresholds[l] += s
+                    box_count += 1
+            if box_count == 0:
+                thresholds += self.confidence_threshold
+            else:
+                thresholds = thresholds / box_count
+            thresholds = np.power(thresholds, 0.5) + 0.5
+            thresholds[thresholds > self.confidence_threshold] = self.confidence_threshold
+            with open('tmp_thresholds.txt', 'a') as f:
+                f.write(' '.join(thresholds) + '\n')
+
         for i, sample_pred in enumerate(unlab_pred):
             boxes = sample_pred['boxes'].cpu()
             labels = sample_pred['labels'].cpu()
@@ -419,7 +442,7 @@ class STAC(pl.LightningModule):
             target_boxes = []
             target_labels = []
             for j in range(len(labels)):
-                if scores[j] < self.confidence_threshold:
+                if scores[j] < thresholds[labels[j]]:
                     index.append(j)
             pseudo_boxes_all += len(boxes)
 
