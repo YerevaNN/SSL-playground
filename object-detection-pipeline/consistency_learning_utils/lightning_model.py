@@ -427,11 +427,11 @@ class STAC(pl.LightningModule):
             if box_count == 0:
                 thresholds += self.confidence_threshold
             else:
-                thresholds = thresholds / box_count
-            thresholds = np.power(thresholds, 0.5) + 0.5
-            thresholds[thresholds > self.confidence_threshold] = self.confidence_threshold
+                p = np.power(thresholds, 0.1)
+                thresholds = p / p.max() * self.confidence_threshold
+
             with open('tmp_thresholds.txt', 'a') as f:
-                f.write(' '.join(thresholds) + '\n')
+                f.write(' '.join(["{:.2f}".format(t) for t in thresholds]) + '\n')
 
         for i, sample_pred in enumerate(unlab_pred):
             boxes = sample_pred['boxes'].cpu()
