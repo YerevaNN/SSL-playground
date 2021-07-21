@@ -430,7 +430,7 @@ class STAC(pl.LightningModule):
                 p = np.power(thresholds, 0.1)
                 thresholds = p / p.max() * self.confidence_threshold
 
-            with open('tmp_thresholds.txt', 'a') as f:
+            with open('{}_thresholds.txt'.format(self.hparams['version_name']), 'a') as f:
                 f.write(' '.join(["{:.2f}".format(t) for t in thresholds]) + '\n')
 
         for i, sample_pred in enumerate(unlab_pred):
