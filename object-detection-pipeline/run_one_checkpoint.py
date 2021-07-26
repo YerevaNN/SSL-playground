@@ -31,7 +31,7 @@ parser.add_argument('--reuse_classifier', type=str, default=None)
 parser.add_argument('--check_val_steps', type=int, default=None)
 parser.add_argument('--batch_size', type=int, default=None)
 parser.add_argument('--thresholding_method', type=str, default=None)
-parser.add_argument('--multigpu', type=list, default=None)
+parser.add_argument('--multigpu', nargs='+', type=int, default=None)
 
 args = parser.parse_args()
 
