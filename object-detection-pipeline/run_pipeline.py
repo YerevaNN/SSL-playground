@@ -25,8 +25,8 @@ def main(_):
         dataset_name = task['session']['Session_Status']['current_dataset']['name']
         # TRAIN_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/train'.format(dataset_name, dataset_name)
         # TEST_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/test'.format(dataset_name, dataset_name)
-        TRAIN_DATASET_PATH = '/lwll/external/{}/{}_full/train'.format(dataset_name, dataset_name)
-        TEST_DATASET_PATH = '/lwll/evaluation/{}/{}_full/test'.format(dataset_name, dataset_name)
+        TRAIN_DATASET_PATH = '/lwll/development/{}/{}_full/train'.format(dataset_name, dataset_name)
+        TEST_DATASET_PATH = '/lwll/development/{}/{}_full/test'.format(dataset_name, dataset_name)
 
         training_classes = task['session']['Session_Status']['current_dataset']['classes']
         class_name_to_id = {}
@@ -193,13 +193,15 @@ def main(_):
             with open(os.path.join(current_task_dir, 'stage{}.json'.format(stage)), 'w') as f:
                 json.dump(class_id_to_name, f)
 
-            if stage >= 3:
-                cmd = 'python run_one_checkpoint.py --output_csv {} --session_id {} --dataset_name {} --phase {} --stage {} --class_num {}'.format(output_csv, task['session_token'], task['session']['Session_Status']['current_dataset']['name'], phase, stage, len(class_id_to_name.keys()))
+            cmd = 'python run_one_checkpoint.py --output_csv {} --session_id {} --dataset_name {} --phase {} --stage {} --class_num {}'.format(
+                output_csv, task['session_token'], task['session']['Session_Status']['current_dataset']['name'], phase,
+                stage, len(class_id_to_name.keys()))
+            if False and stage >= 3:
                 print("Starting: {}".format(cmd))
                 os.system(cmd)
                 print("Finished: {}".format(cmd))
             else:
-                print('Skipping base stage...')
+                print('Skipping: {}'.format(cmd))
 
             empty_submission = {
                 'id':{

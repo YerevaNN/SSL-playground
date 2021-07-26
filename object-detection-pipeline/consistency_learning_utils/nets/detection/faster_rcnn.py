@@ -291,7 +291,8 @@ model_urls = {
 
 
 def fasterrcnn_resnet50_fpn(pretrained=False, progress=True,
-                            num_classes=91, pretrained_backbone=True, **kwargs):
+                            num_classes=91, pretrained_backbone=True,
+                            box_score_thresh=0.05, **kwargs):
     """
     Constructs a Faster R-CNN model with a ResNet-50-FPN backbone.
 
@@ -332,7 +333,7 @@ def fasterrcnn_resnet50_fpn(pretrained=False, progress=True,
         # no need to download the backbone if pretrained is set
         pretrained_backbone = False
     backbone = resnet_fpn_backbone('resnet50', pretrained_backbone)
-    model = FasterRCNN(backbone, num_classes, **kwargs)
+    model = FasterRCNN(backbone, num_classes, box_score_thresh=box_score_thresh, **kwargs)
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls['fasterrcnn_resnet50_fpn_coco'],
                                               progress=progress)

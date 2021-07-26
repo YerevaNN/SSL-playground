@@ -115,7 +115,7 @@ def voc_collate_fn(batch):
 
 def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file_path, external_val_file_path,
                            external_val_label_root, label_root, batch_size, num_workers, stage=0,
-                           validation_part=0, pin_memory=True):
+                           validation_part=0, pin_memory=True, augmentation=1):
 
     train_unlabelled_ds = MyDataset(unlabelled_file_path, target_required=False)
     test_ds = MyDataset(testing_file_path, target_required=False)
@@ -137,14 +137,27 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
         ToTensor()
     ])
 
-    strong_augment_transform = Compose([
-        ToPILImage(),
-        autoaugment.CIFAR10Policy(),
-        ToTensor(),
-        Cutout(0.7, (0.05, 0.2), (0.3, 3.3)),
-        Cutout(0.5, (0.02, 0.2), (0.1, 6)),
-        Cutout(0.3, (0.02, 0.2), (0.05, 8))
-    ])
+    if augmentation == 0:
+        strong_augment_transform = Compose([
+            ToTensor()
+        ])
+    elif augmentation == 1:
+        strong_augment_transform = Compose([
+            ToPILImage(),
+            autoaugment.CIFAR10Policy(),
+            ToTensor()
+        ])
+    elif augmentation == 2:
+        strong_augment_transform = Compose([
+            ToPILImage(),
+            autoaugment.CIFAR10Policy(),
+            ToTensor(),
+            Cutout(0.7, (0.05, 0.2), (0.3, 3.3)),
+            Cutout(0.5, (0.02, 0.2), (0.1, 6)),
+            Cutout(0.3, (0.02, 0.2), (0.05, 8))
+        ])
+    else:
+        raise NotImplementedError
 
     no_transform = Compose([
         ToTensor()

@@ -2,7 +2,6 @@ from pipeline_utils import *
 import os
 import shutil
 import pytorch_lightning as pl
-import torch
 
 from consistency_learning_utils.lightning_model import STAC
 
@@ -14,21 +13,23 @@ parser.add_argument('--phase', type=str, default=None)
 parser.add_argument('--stage', type=int, default=None)
 parser.add_argument('--class_num', type=int, default=None)
 parser.add_argument('--output_csv', type=str, default=None)
+parser.add_argument('--teacher_init_path', type=str, default=None)
 
 parser.add_argument('--experiment_name', type=str, default=None)
 parser.add_argument('--learning_rate', type=float, default=None)
 parser.add_argument('--gradient_clip_threshold', type=float, default=None)
 parser.add_argument('--confidence_threshold', type=float, default=None)
+parser.add_argument('--box_score_thresh', type=float, default=None)
 parser.add_argument('--weight_decay', type=float, default=None)
 parser.add_argument('--seed', type=int, default=None)
 parser.add_argument('--EMA_keep_rate', type=float, default=None)
 parser.add_argument('--gamma', type=float, default=None)
+parser.add_argument('--augmentation', type=int, default=None)
 parser.add_argument('--initialization', type=str, default=None)
 parser.add_argument('--reuse_classifier', type=str, default=None)
 parser.add_argument('--check_val_steps', type=int, default=None)
 parser.add_argument('--batch_size', type=int, default=None)
-parser.add_argument('--multigpu', type=list, default=None)
-
+parser.add_argument('--thresholding_method', type=str, default=None)
 
 args = parser.parse_args()
 
@@ -67,7 +68,8 @@ if __name__ == "__main__":
 
     for key in ['experiment_name', 'learning_rate', 'gradient_clip_threshold',
                 'confidence_threshold', 'weight_decay', 'seed', 'EMA_keep_rate', 'gamma',
-                'initialization', 'reuse_classifier', 'check_val_steps', 'batch_size', 'multigpu']:
+                'initialization', 'reuse_classifier', 'check_val_steps', 'batch_size',
+                'box_score_thresh', 'augmentation', 'teacher_init_path', 'thresholding_method']:
         if key in argsdict and argsdict[key] is not None:
             print("Overriding {} to {}".format(key, argsdict[key]))
             hparams[key] = argsdict[key]
@@ -129,12 +131,7 @@ if __name__ == "__main__":
 
     hparams['version_name'] = best_version_name
 
-    device = torch.device("cuda:{}".format(hparams['multigpu']) if torch.cuda.is_available() else "cpu")
-
     best_model = STAC(argparse.Namespace(**hparams))
-    best_model = torch.nn.DataParallel(best_model)
-    best_model.to(device)
-
     best_model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
                             external_val_file_path, external_val_label_root, label_root)
     eps = 1e-10

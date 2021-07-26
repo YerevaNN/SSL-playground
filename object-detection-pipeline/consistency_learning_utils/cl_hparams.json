@@ -1,32 +1,44 @@
 {
-    "experiment_name": "doesnotmatter",
+    "experiment_name": "debug",
 
     "model": "fasterrcnn",
     "initialization": "backbone",
     "reuse_classifier": false,
+    "teacher_init_path": false,
 
-    "learning_rate": 0.01,
-    "total_steps_teacher_initial": 40000,
-    "total_steps_student_initial": 40000,
+    "total_steps_teacher_initial": 10000,
+    "total_steps_student_initial": 20000,
     "total_steps_teacher_stage_inc": 0,
     "total_steps_student_stage_inc": 0,
     "check_val_steps": 1000,
-    "warmup_steps": 1000,
-    "drop_steps": 30000,
-    "lr_drop_rate": 10,
-    "lr_schedule": "warmupWithDrop",
 
+    "learning_rate": 0.02,
+    "lr_drop_rate": 10,
+    "warmup_steps": 1000,
+    "lr_drop_steps": 30000,
+    "lr_schedule": "warmupWithDrop",
     "momentum": 0.9,
-    "gradient_clip_threshold": 0.5,
-    "seed": 47,
     "weight_decay": 0,
-    "batch_size": 2,
+
+    "student_learning_rate": 0.01,
+    "student_lr_drop_rate": 10,
+    "student_warmup_steps": 1000,
+    "student_lr_drop_steps": 30000,
+    "student_lr_schedule": "warmupWithDrop",
+
+    "augmentation": 2,
     "confidence_threshold": 0.9,
+    "thresholding_method": "dynamic1",
+    "box_score_thresh": 0.005,
+    "EMA_keep_rate": 0.9996,
+    "batch_size": 5,
+    "gradient_clip_threshold": 1,
+    "gamma": 0,
+
+    "seed": 1,
     "validation_part": 0,
-    "num_workers": 8,
+    "num_workers": 0,
 
     "consistency_lambda": 2,
-    "EMA_keep_rate": 0.996,
     "consistency_criterion": "KL"
-
 }

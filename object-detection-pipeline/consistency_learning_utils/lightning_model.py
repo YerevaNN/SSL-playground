@@ -65,7 +65,7 @@ class SkipConnection(nn.Module):
         return torch.cat((x, z), dim=-1)
 
 
-def model_changed_classifier(reuse_classifier=False, initialize=False, class_num=20, gamma=1):
+def model_changed_classifier(reuse_classifier=False, initialize=False, class_num=20, gamma=1, box_score_thresh=0.05):
     """
 
     Args:
@@ -89,12 +89,13 @@ def model_changed_classifier(reuse_classifier=False, initialize=False, class_num
     if reuse_classifier is False:
         model = fasterrcnn_resnet50_fpn(pretrained=pretrained, progress=True,
                                         num_classes=class_num+1,
-                                        pretrained_backbone=backbone, gamma=gamma)
+                                        pretrained_backbone=backbone, gamma=gamma,
+                                        box_score_thresh=box_score_thresh)
         return model
 
     model = fasterrcnn_resnet50_fpn(pretrained=pretrained, progress=True,
-                                    num_classes=91,
-                                    pretrained_backbone=backbone, gamma=gamma)
+                                    num_classes=91, pretrained_backbone=backbone,
+                                    gamma=gamma, box_score_thresh=box_score_thresh)
 
     if reuse_classifier == 'add':
         old_cls_score = model.roi_heads.box_predictor.cls_score
@@ -140,13 +141,13 @@ class STAC(pl.LightningModule):
         self.lr = self.hparams['learning_rate']
         self.stage = self.hparams['stage']
         self.confidence_threshold = self.hparams['confidence_threshold']
+        self.thresholding_method = self.hparams['thresholding_method']
         self.last_unsupervised_loss = 0
         self.training_map = 1
         self.best_teacher_val = 1000
         self.best_student_val = 1000
         self.best_val_loss = 10000000
         self.validation_counter = 0
-        self.warmup_steps = self.hparams['warmup_steps']
         self.validation_part = self.hparams["validation_part"]
         self.lam = self.hparams['consistency_lambda']
         self.momentum = self.hparams['momentum']
@@ -172,13 +173,15 @@ class STAC(pl.LightningModule):
             initialize=self.hparams['initialization'],
             reuse_classifier=self.hparams['reuse_classifier'],
             class_num=self.hparams['class_num'],
-            gamma=self.hparams['gamma'])
+            gamma=self.hparams['gamma'],
+            box_score_thresh=self.hparams['box_score_thresh'])
 
         self.student = model_changed_classifier(
             initialize=self.hparams['initialization'],
             reuse_classifier=self.hparams['reuse_classifier'],
             class_num=self.hparams['class_num'],
-            gamma=self.hparams['gamma'])
+            gamma=self.hparams['gamma'],
+            box_score_thresh=self.hparams['box_score_thresh'])
 
         self.teacher.cuda()
         self.student.cuda()
@@ -298,7 +301,8 @@ class STAC(pl.LightningModule):
                                          self.hparams['batch_size'],
                                          self.hparams['num_workers'],
                                          stage=self.stage,
-                                         validation_part=self.validation_part)
+                                         validation_part=self.validation_part,
+                                         augmentation=self.hparams['augmentation'])
         self.train_loader, self.test_loader, self.val_loader = loaders
 
     def make_teacher_trainer(self):
@@ -313,6 +317,7 @@ class STAC(pl.LightningModule):
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
             callbacks=[self.t_checkpoint_callback],
+            num_sanity_val_steps=0,
             logger=self.aim_logger,
             log_every_n_steps=10, progress_bar_refresh_rate=1,
             gradient_clip_val=self.hparams['gradient_clip_threshold'],
@@ -337,6 +342,7 @@ class STAC(pl.LightningModule):
             gpus=-1, checkpoint_callback=True, # what is this?
             callbacks=[checkpoint_callback],
             logger=self.aim_logger,
+            num_sanity_val_steps=0,
             log_every_n_steps=10, progress_bar_refresh_rate=1,
             gradient_clip_val=self.hparams['gradient_clip_threshold'],
             min_steps=self.hparams['total_steps_student'],
@@ -398,12 +404,35 @@ class STAC(pl.LightningModule):
         # save_image(unlabeled_x[0], 'unlabeled.png')
         # save_image(augmented_x[0], 'augmented.png')
 
-        to_train = True
+        to_train = False
 
         pseudo_boxes_all = 0
         pseudo_boxes_confident = 0
 
+        non_zero_boxes = []
         target = []
+
+        thresholds = np.zeros(self.hparams['class_num'] + 1)
+        if self.thresholding_method == 'constant':
+            thresholds += self.confidence_threshold
+        elif self.thresholding_method == 'dynamic1':
+            # calculate stats for this batch
+            box_count = 0
+            for sample_pred in unlab_pred:
+                labels = sample_pred['labels'].cpu()
+                scores = sample_pred['scores'].cpu()
+                for l, s in zip(labels, scores):
+                    thresholds[l] += s
+                    box_count += 1
+            if box_count == 0:
+                thresholds += self.confidence_threshold
+            else:
+                p = np.power(thresholds, 0.1)
+                thresholds = p / p.max() * self.confidence_threshold
+
+            with open('{}_thresholds.txt'.format(self.hparams['version_name']), 'a') as f:
+                f.write(' '.join(["{:.2f}".format(t) for t in thresholds]) + '\n')
+
         for i, sample_pred in enumerate(unlab_pred):
             boxes = sample_pred['boxes'].cpu()
             labels = sample_pred['labels'].cpu()
@@ -413,21 +442,20 @@ class STAC(pl.LightningModule):
             target_boxes = []
             target_labels = []
             for j in range(len(labels)):
-                if scores[j] < self.confidence_threshold:
+                if scores[j] < thresholds[labels[j]]:
                     index.append(j)
             pseudo_boxes_all += len(boxes)
-            if len(boxes) != 0 and len(index) == len(boxes):
-                del(index[0])
 
             boxes = np.delete(boxes, index, axis=0)
             labels = np.delete(labels, index)
             scores = np.delete(scores, index)
 
+            if len(boxes) > 0:
+                non_zero_boxes.append(i)
+
             # TODO move to the device of the model
             pseudo_boxes_confident += len(boxes)
-            if len(boxes) == 0:
-                to_train = False
-                break
+
             for j, box in enumerate(boxes):
                 target_boxes.append([box[0], box[1], box[2], box[3]])
                 target_labels.append(labels[j])
@@ -436,8 +464,13 @@ class STAC(pl.LightningModule):
             tensor_labels = torch.tensor(target_labels).long().cuda()
 
             target.append({'boxes': tensor_boxes, 'labels': tensor_labels})
-        if to_train:
-            augment_pred = self.student(augmented_x, target, augmented_image_paths)
+
+        if len(non_zero_boxes):
+            augment_pred = self.student(
+                [x for i, x in enumerate(augmented_x) if i in non_zero_boxes],
+                [y for i, y in enumerate(target) if i in non_zero_boxes],
+                [z for i, z in enumerate(augmented_image_paths) if i in non_zero_boxes]
+            )
             unsup_loss = self.frcnn_loss(augment_pred)
         else:
             unsup_loss = 0 * augmented_x[0].new(1).squeeze()
@@ -685,28 +718,27 @@ class STAC(pl.LightningModule):
     def optimizer_step(self, epoch: int = None, batch_idx: int = None, optimizer = None,
                        optimizer_idx: int = None, optimizer_closure = None, on_tpu: bool = None,
                        using_native_amp: bool = None, using_lbfgs: bool = None):
-        # if self.hparams['lr_schedule'] == 'constant':
-        #     lr_scale = 1.
-        # elif self.hparams['lr_schedule'] == 'warmup':
-        #     if self.trainer.global_step < self.warmup_steps:
-        #         lr_scale = min(1., float(self.trainer.global_step + 1) / self.warmup_steps)
-        #     else:
-        #         t_steps = self.hparams['total_steps_student']
-        #         if self.onTeacher:
-        #             t_steps = self.hparams['total_steps_teacher']
-        #         lr_scale = 1 - (self.trainer.global_step - self.warmup_steps) / (t_steps - self.warmup_steps)
-        # else:
-        #     raise NotImplementedError
-        
-        if self.hparams['lr_schedule'] == 'constant':
-            curLR = self.lr
-        elif self.hparams['lr_schedule'] == 'warmup' or self.hparams['lr_schedule'] == 'warmupWithDrop':
-            if self.trainer.global_step < self.warmup_steps:
-                curLR = self.lr * min(1., float(self.trainer.global_step + 1) / self.warmup_steps)
-            elif self.trainer.global_step < self.hparams['drop_steps']:
-                curLR = self.lr
+        lr = self.hparams['learning_rate']
+        lr_schedule = self.hparams['lr_schedule']
+        drop_steps = self.hparams['lr_drop_steps']
+        drop_rate = self.hparams['lr_drop_rate']
+        warmup_steps = self.hparams['warmup_steps']
+        if not self.onTeacher:
+            lr = self.hparams['student_learning_rate']
+            lr_schedule = self.hparams['student_lr_schedule']
+            drop_steps = self.hparams['student_lr_drop_steps']
+            drop_rate = self.hparams['student_lr_drop_rate']
+            warmup_steps = self.hparams['student_warmup_steps']
+
+        if lr_schedule == 'constant':
+            curLR = lr
+        elif lr_schedule == 'warmup' or lr_schedule == 'warmupWithDrop':
+            if self.trainer.global_step < warmup_steps:
+                curLR = lr * min(1., float(self.trainer.global_step + 1) / warmup_steps)
+            elif self.trainer.global_step < drop_steps or lr_schedule != 'warmupWithDrop':
+                curLR = lr
             else:
-                curLR = self.lr / self.hparams['lr_drop_rate']
+                curLR = lr / drop_rate
         else:
             raise NotImplementedError
 
@@ -727,16 +759,20 @@ class STAC(pl.LightningModule):
         return optimizer
 
     def fit_model(self):
-        print("Starting teacher")
-        self.onTeacher = True
-        print("Will train for {} epochs, validate every {} epochs".format(
-            self.hparams['total_steps_teacher'] // self.batches_per_epoch,
-            self.check_val_epochs
-        ))
+        if self.hparams['teacher_init_path'] == False:
+            print("Starting teacher")
+            self.onTeacher = True
+            print("Will train for {} epochs, validate every {} epochs".format(
+                self.hparams['total_steps_teacher'] // self.batches_per_epoch,
+                self.check_val_epochs
+            ))
 
-        self.validation_counter = 0
-        self.teacher_trainer.fit(self)
-        print("Finished teacher")
+            self.validation_counter = 0
+            self.teacher_trainer.fit(self)
+            print("Finished teacher")
+        else:
+            print("Loading teacher model from: {}".format(self.hparams['teacher_init_path']))
+            self.load_checkpoint_teacher(self.hparams['teacher_init_path'])
 
         # self.load_best_teacher() # TODO I do not think this will always work
         # The best teacher is the last one, as we do not know how to measure what it the best one
