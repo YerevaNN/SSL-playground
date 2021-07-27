@@ -16,12 +16,13 @@ parser.add_argument('--output_csv', type=str, default=None)
 parser.add_argument('--teacher_init_path', type=str, default=None)
 
 parser.add_argument('--experiment_name', type=str, default=None)
+parser.add_argument('--seed', type=int, default=None)
 parser.add_argument('--learning_rate', type=float, default=None)
+parser.add_argument('--student_learning_rate', type=float, default=None)
 parser.add_argument('--gradient_clip_threshold', type=float, default=None)
 parser.add_argument('--confidence_threshold', type=float, default=None)
 parser.add_argument('--box_score_thresh', type=float, default=None)
 parser.add_argument('--weight_decay', type=float, default=None)
-parser.add_argument('--seed', type=int, default=None)
 parser.add_argument('--EMA_keep_rate', type=float, default=None)
 parser.add_argument('--gamma', type=float, default=None)
 parser.add_argument('--augmentation', type=int, default=None)
@@ -30,6 +31,8 @@ parser.add_argument('--reuse_classifier', type=str, default=None)
 parser.add_argument('--check_val_steps', type=int, default=None)
 parser.add_argument('--batch_size', type=int, default=None)
 parser.add_argument('--thresholding_method', type=str, default=None)
+parser.add_argument('--total_steps_teacher_initial', type=int, default=None)
+parser.add_argument('--total_steps_student_initial', type=int, default=None)
 
 args = parser.parse_args()
 
@@ -66,10 +69,12 @@ if __name__ == "__main__":
 
     argsdict = vars(args)
 
-    for key in ['experiment_name', 'learning_rate', 'gradient_clip_threshold',
-                'confidence_threshold', 'weight_decay', 'seed', 'EMA_keep_rate', 'gamma',
+    for key in ['experiment_name', 'seed', 'learning_rate', 'student_learning_rate',
+                'gradient_clip_threshold', 'confidence_threshold', 'thresholding_method',
+                'weight_decay', 'EMA_keep_rate', 'gamma',
                 'initialization', 'reuse_classifier', 'check_val_steps', 'batch_size',
-                'box_score_thresh', 'augmentation', 'teacher_init_path', 'thresholding_method']:
+                'box_score_thresh', 'augmentation', 'teacher_init_path',
+                'total_steps_teacher_initial', 'total_steps_student_initial']:
         if key in argsdict and argsdict[key] is not None:
             print("Overriding {} to {}".format(key, argsdict[key]))
             hparams[key] = argsdict[key]
