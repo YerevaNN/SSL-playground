@@ -34,7 +34,6 @@ parser.add_argument('--batch_size', type=int, default=None)
 parser.add_argument('--thresholding_method', type=str, default=None)
 parser.add_argument('--total_steps_teacher_initial', type=int, default=None)
 parser.add_argument('--total_steps_student_initial', type=int, default=None)
-parser.add_argument('--multigpu', nargs='+', type=int, default=None)
 
 args = parser.parse_args()
 
@@ -76,7 +75,7 @@ if __name__ == "__main__":
                 'weight_decay', 'EMA_keep_rate', 'gamma',
                 'initialization', 'reuse_classifier', 'check_val_steps', 'batch_size',
                 'box_score_thresh', 'augmentation', 'teacher_init_path',
-                'total_steps_teacher_initial', 'total_steps_student_initial', 'multigpu']:
+                'total_steps_teacher_initial', 'total_steps_student_initial']:
         if key in argsdict and argsdict[key] is not None:
             print("Overriding {} to {}".format(key, argsdict[key]))
             hparams[key] = argsdict[key]
@@ -138,12 +137,7 @@ if __name__ == "__main__":
 
     hparams['version_name'] = best_version_name
 
-    device = torch.device("cuda:{}".format(hparams['multigpu']) if torch.cuda.is_available() else "cpu")
-
     best_model = STAC(argparse.Namespace(**hparams))
-    best_model = torch.nn.DataParallel(best_model)
-    best_model.to(device)
-
     best_model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
                             external_val_file_path, external_val_label_root, label_root)
     eps = 1e-10
