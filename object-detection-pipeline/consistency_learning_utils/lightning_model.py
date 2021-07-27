@@ -290,7 +290,7 @@ class STAC(pl.LightningModule):
         self.teacher.load_state_dict(new_teacher_dict)
 
     def set_datasets(self, labeled_file_path, unlabeled_file_path, testing_file_path,
-                     external_val_file_path, external_val_label_root, label_root):
+                     external_val_file_path, external_val_label_root, label_root, only_teacher):
 
         loaders = get_train_test_loaders(labeled_file_path,
                                          unlabeled_file_path,
@@ -302,7 +302,8 @@ class STAC(pl.LightningModule):
                                          self.hparams['num_workers'],
                                          stage=self.stage,
                                          validation_part=self.validation_part,
-                                         augmentation=self.hparams['augmentation'])
+                                         augmentation=self.hparams['augmentation'],
+                                         only_teacher=only_teacher)
         self.train_loader, self.test_loader, self.val_loader = loaders
 
     def make_teacher_trainer(self):
