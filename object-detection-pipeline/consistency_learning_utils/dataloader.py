@@ -147,7 +147,7 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
             autoaugment.CIFAR10Policy(),
             ToTensor()
         ])
-    elif augmentation == 2:
+    elif augmentation == 2 or 3:
         strong_augment_transform = Compose([
             ToPILImage(),
             autoaugment.CIFAR10Policy(),
@@ -166,14 +166,20 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
     external_val_ds = TransformedDataset(external_val_ds,
                                          transform_fn=lambda dp: (no_transform(dp[0]), dp[1], dp[2]),
                                          shuffle=False, shuffle_seed=1)
+    if augmentation == 3:
+        train_labelled_weak_ds = TransformedDataset(train_labelled_ds,
+                                                   transform_fn=lambda dp: (strong_augment_transform(dp[0]), dp[1], dp[2]),
+                                                   shuffle=True, shuffle_seed=1)
+        train_labelled_strong_ds = TransformedDataset(train_labelled_ds,
+                                                   transform_fn=lambda dp: (weak_augment_transform(dp[0]), dp[1], dp[2]),
+                                                   shuffle=True, shuffle_seed=1)
+        train_labelled_ds = ConcatDataset(train_labelled_weak_ds, train_labelled_strong_ds)
 
-    train_labelled_weak_ds = TransformedDataset(train_labelled_ds,
-                                               transform_fn=lambda dp: (strong_augment_transform(dp[0]), dp[1], dp[2]),
-                                               shuffle=True, shuffle_seed=1)
-    train_labelled_strong_ds = TransformedDataset(train_labelled_ds,
-                                               transform_fn=lambda dp: (weak_augment_transform(dp[0]), dp[1], dp[2]),
-                                               shuffle=True, shuffle_seed=1)
-    train_labelled_ds = ConcatDataset(train_labelled_weak_ds, train_labelled_strong_ds)
+    else:
+        train_labelled_ds = TransformedDataset(train_labelled_ds,
+                                                    transform_fn=lambda dp: (
+                                                    strong_augment_transform(dp[0]), dp[1], dp[2]),
+                                                    shuffle=True, shuffle_seed=1)
 
     val_ds = TransformedDataset(val_ds, transform_fn=lambda dp: (no_transform(dp[0]), dp[1], dp[2]),
                                 shuffle=False, shuffle_seed=1)

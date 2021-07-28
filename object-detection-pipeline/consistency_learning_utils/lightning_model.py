@@ -492,11 +492,13 @@ class STAC(pl.LightningModule):
 
     def teacher_training_step(self, batch_list):
         sup_batch, _ = batch_list
-        weak_aug_labels, strong_aug_labels = sup_batch
+        if self.hparams['augmentation'] == 3:
+            weak_aug_labels, strong_aug_labels = sup_batch
+            sup_batch = strong_aug_labels
         self.teacher.set_is_supervised(True)
         # save_image(sup_batch[0][0], 'image1.png')
 
-        sup_loss = self.teacher_supervised_step(strong_aug_labels)
+        sup_loss = self.teacher_supervised_step(sup_batch)
 
         loss = self.frcnn_loss(sup_loss)
         self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
@@ -515,8 +517,10 @@ class STAC(pl.LightningModule):
 
         sup_batch, unsup_batch = batch_list
         self.student.set_is_supervised(True)
-        weak_aug, strong_aug = batch_list
-        sup_y_hat = self.student_supervised_step(weak_aug)
+        if self.hparams['augmentation'] == 3:
+            weak_aug, strong_aug = sup_batch
+            sup_batch = weak_aug
+        sup_y_hat = self.student_supervised_step(sup_batch)
 
         self.student.set_is_supervised(False)
 
