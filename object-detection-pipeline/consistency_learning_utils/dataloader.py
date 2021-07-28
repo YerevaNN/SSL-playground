@@ -121,6 +121,8 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
     test_ds = MyDataset(testing_file_path, target_required=False)
     if(os.path.isfile(external_val_file_path)):
         external_val_ds = MyDataset(external_val_file_path, target_required=True, label_root=external_val_label_root)
+    else:
+        external_val_ds = Dataset()
 
     if stage == 0 or validation_part == 0:
         train_labelled_ds = MyDataset(labeled_file_path, target_required=True, label_root=label_root)
