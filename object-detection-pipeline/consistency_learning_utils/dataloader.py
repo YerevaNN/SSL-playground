@@ -167,14 +167,12 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
                                          transform_fn=lambda dp: (no_transform(dp[0]), dp[1], dp[2]),
                                          shuffle=False, shuffle_seed=1)
     if augmentation == 3:
-        train_labelled_weak_ds = TransformedDataset(train_labelled_ds,
-                                                   transform_fn=lambda dp: (strong_augment_transform(dp[0]), dp[1], dp[2]),
-                                                   shuffle=True, shuffle_seed=1)
-        train_labelled_strong_ds = TransformedDataset(train_labelled_ds,
-                                                   transform_fn=lambda dp: (weak_augment_transform(dp[0]), dp[1], dp[2]),
-                                                   shuffle=True, shuffle_seed=1)
-        train_labelled_ds = ConcatDataset(train_labelled_weak_ds, train_labelled_strong_ds)
-
+        train_labelled_ds = TransformedDataset(
+            train_labelled_ds, STACTransform(
+                lambda dp: (weak_augment_transform(dp[0]), dp[1], dp[2]),
+                lambda dp: (strong_augment_transform(dp[0]), dp[1], dp[2])
+            ),
+            shuffle=True, shuffle_seed=1)
     else:
         train_labelled_ds = TransformedDataset(train_labelled_ds,
                                                     transform_fn=lambda dp: (
