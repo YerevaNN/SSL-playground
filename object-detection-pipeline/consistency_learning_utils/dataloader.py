@@ -121,8 +121,11 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
     test_ds = MyDataset(testing_file_path, target_required=False)
     if(os.path.isfile(external_val_file_path)):
         external_val_ds = MyDataset(external_val_file_path, target_required=True, label_root=external_val_label_root)
-    else:
-        external_val_ds = Dataset()
+        external_val_ds = TransformedDataset(external_val_ds,
+                                             transform_fn=lambda dp: (no_transform(dp[0]), dp[1], dp[2]),
+                                             shuffle=False, shuffle_seed=1)
+        external_val_loader = DataLoader(external_val_ds, batch_size=batch_size, num_workers=num_workers,
+                                         pin_memory=pin_memory, collate_fn=voc_collate_fn, shuffle=False)
 
     if stage == 0 or validation_part == 0:
         train_labelled_ds = MyDataset(labeled_file_path, target_required=True, label_root=label_root)
@@ -166,9 +169,6 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
         ToTensor()
     ])
 
-    external_val_ds = TransformedDataset(external_val_ds,
-                                         transform_fn=lambda dp: (no_transform(dp[0]), dp[1], dp[2]),
-                                         shuffle=False, shuffle_seed=1)
     if augmentation == 3:
         train_labelled_ds = TransformedDataset(
             train_labelled_ds, STACTransform(
@@ -196,8 +196,6 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
 
     train_dataset = ConcatDataset(train_labelled_ds, train_unlabelled_ds)
 
-    external_val_loader = DataLoader(external_val_ds, batch_size=batch_size, num_workers=num_workers,
-                                     pin_memory=pin_memory, collate_fn=voc_collate_fn, shuffle=False)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, num_workers=num_workers,
                               pin_memory=pin_memory, collate_fn=voc_collate_fn, shuffle=True)
@@ -207,8 +205,9 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
 
     val_loader = DataLoader(val_ds, batch_size=batch_size, num_workers=num_workers,
                             pin_memory=pin_memory, collate_fn=voc_collate_fn, shuffle=False)
-
-    return train_loader, test_loader, external_val_loader
+    if(os.path.isfile(external_val_file_path)):
+        return train_loader, test_loader, external_val_loader
+    return train_loader, test_loader
 
 
 class TransformedDataset(Dataset):

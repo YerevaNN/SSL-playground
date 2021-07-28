@@ -303,7 +303,12 @@ class STAC(pl.LightningModule):
                                          stage=self.stage,
                                          validation_part=self.validation_part,
                                          augmentation=self.hparams['augmentation'])
-        self.train_loader, self.test_loader, self.val_loader = loaders
+        if (os.path.isfile(external_val_file_path)):
+            self.train_loader, self.test_loader, self.val_loader = loaders
+        else:
+            self.train_loader, self.test_loader = loaders
+            self.no_val = True
+
 
     def make_teacher_trainer(self):
         self.t_checkpoint_callback = ModelCheckpoint(
@@ -324,7 +329,7 @@ class STAC(pl.LightningModule):
             min_steps=self.hparams['total_steps_teacher'],
             max_steps=self.hparams['total_steps_teacher'],
             check_val_every_n_epoch=self.check_val_epochs,
-            deterministic=True
+            deterministic=True,
         )
 
 
@@ -578,7 +583,8 @@ class STAC(pl.LightningModule):
 
     # @pl.data_loader
     def val_dataloader(self):
-        return self.val_loader
+        if(not self.no_val):
+            return self.val_loader
 
     def validation_step(self, batch, batch_idx):
         # if self.stage == 0 or self.validation_part == 0:
