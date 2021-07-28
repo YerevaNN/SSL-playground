@@ -154,6 +154,7 @@ class STAC(pl.LightningModule):
         self.weight_decay = self.hparams['weight_decay']
         self.consistency_criterion = self.hparams['consistency_criterion']
         self.testWithStudent = True
+        self.no_val = False
 
         self.batches_per_epoch = self.hparams['batches_per_epoch']
         self.check_val_epochs = max(
@@ -585,6 +586,8 @@ class STAC(pl.LightningModule):
     def val_dataloader(self):
         if(not self.no_val):
             return self.val_loader
+        else:
+            return
 
     def validation_step(self, batch, batch_idx):
         # if self.stage == 0 or self.validation_part == 0:
