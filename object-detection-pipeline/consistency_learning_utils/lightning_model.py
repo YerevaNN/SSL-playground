@@ -372,7 +372,15 @@ class STAC(pl.LightningModule):
         return final_loss
 
     def teacher_supervised_step(self, sup_batch):
-        x, y, image_paths = break_batch(sup_batch)
+        if self.hparams['augmentation'] == 3:
+            x, y, image_paths = [], [], []
+            for i in sup_batch:
+                _, strong = i
+                x.append(strong[0])
+                y.append(strong[1])
+                image_paths.append(strong[2])
+        else:
+            x, y, image_paths = break_batch(sup_batch)
 
         target = make_target_from_y(y)
 
@@ -381,7 +389,15 @@ class STAC(pl.LightningModule):
         return y_hat
 
     def student_supervised_step(self, sup_batch):
-        x, y, image_paths = break_batch(sup_batch)
+        if self.hparams['augmentation'] == 3:
+            x, y, image_paths = [], [], []
+            for i in sup_batch:
+                weak, _ = i
+                x.append(weak[0])
+                y.append(weak[1])
+                image_paths.append(weak[2])
+        else:
+            x, y, image_paths = break_batch(sup_batch)
 
         target = make_target_from_y(y)
         y_hat = self.student(x, target, image_paths)
@@ -492,9 +508,6 @@ class STAC(pl.LightningModule):
 
     def teacher_training_step(self, batch_list):
         sup_batch, _ = batch_list
-        if self.hparams['augmentation'] == 3:
-            weak_aug_labels, strong_aug_labels = sup_batch
-            sup_batch = strong_aug_labels
         self.teacher.set_is_supervised(True)
         # save_image(sup_batch[0][0], 'image1.png')
 
@@ -517,9 +530,6 @@ class STAC(pl.LightningModule):
 
         sup_batch, unsup_batch = batch_list
         self.student.set_is_supervised(True)
-        if self.hparams['augmentation'] == 3:
-            weak_aug, strong_aug = sup_batch
-            sup_batch = weak_aug
         sup_y_hat = self.student_supervised_step(sup_batch)
 
         self.student.set_is_supervised(False)
