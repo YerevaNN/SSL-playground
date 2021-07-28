@@ -290,7 +290,7 @@ class STAC(pl.LightningModule):
         self.teacher.load_state_dict(new_teacher_dict)
 
     def set_datasets(self, labeled_file_path, unlabeled_file_path, testing_file_path,
-                     external_val_file_path, external_val_label_root, label_root, only_teacher):
+                     external_val_file_path, external_val_label_root, label_root):
 
         loaders = get_train_test_loaders(labeled_file_path,
                                          unlabeled_file_path,
@@ -302,8 +302,7 @@ class STAC(pl.LightningModule):
                                          self.hparams['num_workers'],
                                          stage=self.stage,
                                          validation_part=self.validation_part,
-                                         augmentation=self.hparams['augmentation'],
-                                         only_teacher=only_teacher)
+                                         augmentation=self.hparams['augmentation'])
         self.train_loader, self.test_loader, self.val_loader = loaders
 
     def make_teacher_trainer(self):
@@ -493,10 +492,11 @@ class STAC(pl.LightningModule):
 
     def teacher_training_step(self, batch_list):
         sup_batch, _ = batch_list
+        weak_aug_labels, strong_aug_labels = sup_batch
         self.teacher.set_is_supervised(True)
         # save_image(sup_batch[0][0], 'image1.png')
 
-        sup_loss = self.teacher_supervised_step(sup_batch)
+        sup_loss = self.teacher_supervised_step(strong_aug_labels)
 
         loss = self.frcnn_loss(sup_loss)
         self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
@@ -515,8 +515,8 @@ class STAC(pl.LightningModule):
 
         sup_batch, unsup_batch = batch_list
         self.student.set_is_supervised(True)
-
-        sup_y_hat = self.student_supervised_step(sup_batch)
+        weak_aug, strong_aug = batch_list
+        sup_y_hat = self.student_supervised_step(weak_aug)
 
         self.student.set_is_supervised(False)
 

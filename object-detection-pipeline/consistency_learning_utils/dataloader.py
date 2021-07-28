@@ -115,7 +115,7 @@ def voc_collate_fn(batch):
 
 def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file_path, external_val_file_path,
                            external_val_label_root, label_root, batch_size, num_workers, stage=0,
-                           validation_part=0, pin_memory=True, augmentation=1, only_teacher=False):
+                           validation_part=0, pin_memory=True, augmentation=1):
 
     train_unlabelled_ds = MyDataset(unlabelled_file_path, target_required=False)
     test_ds = MyDataset(testing_file_path, target_required=False)
@@ -166,14 +166,14 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
     external_val_ds = TransformedDataset(external_val_ds,
                                          transform_fn=lambda dp: (no_transform(dp[0]), dp[1], dp[2]),
                                          shuffle=False, shuffle_seed=1)
-    if only_teacher:
-        train_labelled_ds = TransformedDataset(train_labelled_ds,
+
+    train_labelled_weak_ds = TransformedDataset(train_labelled_ds,
                                                transform_fn=lambda dp: (strong_augment_transform(dp[0]), dp[1], dp[2]),
                                                shuffle=True, shuffle_seed=1)
-    else:
-        train_labelled_ds = TransformedDataset(train_labelled_ds,
+    train_labelled_strong_ds = TransformedDataset(train_labelled_ds,
                                                transform_fn=lambda dp: (weak_augment_transform(dp[0]), dp[1], dp[2]),
                                                shuffle=True, shuffle_seed=1)
+    train_labelled_ds = ConcatDataset(train_labelled_weak_ds, train_labelled_strong_ds)
 
     val_ds = TransformedDataset(val_ds, transform_fn=lambda dp: (no_transform(dp[0]), dp[1], dp[2]),
                                 shuffle=False, shuffle_seed=1)

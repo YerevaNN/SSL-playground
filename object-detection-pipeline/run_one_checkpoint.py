@@ -108,7 +108,7 @@ if __name__ == "__main__":
 
             model = STAC(argparse.Namespace(**hparams))
             model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
-                               external_val_file_path, external_val_label_root, label_root, only_teacher=True)
+                               external_val_file_path, external_val_label_root, label_root)
 
             if initialization == 'from_base':
                 if os.path.exists(best_base_checkpoint_filename):
@@ -138,7 +138,7 @@ if __name__ == "__main__":
 
     best_model = STAC(argparse.Namespace(**hparams))
     best_model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
-                            external_val_file_path, external_val_label_root, label_root, only_teacher=False)
+                            external_val_file_path, external_val_label_root, label_root)
     eps = 1e-10
     best_model.set_test_with_student(True)
     if args.stage == 7: #best_student_loss - eps > best_teacher_loss or
