@@ -184,8 +184,8 @@ class STAC(pl.LightningModule):
             gamma=self.hparams['gamma'],
             box_score_thresh=self.hparams['box_score_thresh'])
 
-        self.teacher.cuda()
-        self.student.cuda()
+        # self.teacher.cuda()
+        # self.student.cuda()
 
         self.aim_logger = AimLogger(
             experiment=self.hparams['version_name']
@@ -289,6 +289,12 @@ class STAC(pl.LightningModule):
                 raise Exception("{} is not found in student model".format(key))
 
         self.teacher.load_state_dict(new_teacher_dict)
+
+        key = 'roi_heads.box_head.fc6.weight'
+        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+            f.write("After EMA: GR={} key={} max value={}\n".format(
+                self.global_rank, key, self.teacher.state_dict()[key].max()
+            ))
 
     def set_datasets(self, labeled_file_path, unlabeled_file_path, testing_file_path,
                      external_val_file_path, external_val_label_root, label_root):
@@ -394,6 +400,9 @@ class STAC(pl.LightningModule):
 
         y_hat = self.teacher(x, target, image_paths)
 
+        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+            f.write("GR={} images=({})\n".format(
+                self.global_rank, ' '.join([os.path.basename(i[2]) for i in sup_batch])))
         return y_hat
 
     def student_supervised_step(self, sup_batch):
@@ -410,9 +419,17 @@ class STAC(pl.LightningModule):
         target = make_target_from_y(y)
         y_hat = self.student(x, target, image_paths)
 
+        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+            f.write("Supervised GR={} images=({})\n".format(
+                self.global_rank, ' '.join([os.path.basename(i[2]) for i in sup_batch])))
+
         return y_hat
 
     def student_unsupervised_step(self, unsup_batch):
+        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+            f.write("Unsupervised GR={} images=({})\n".format(
+            self.global_rank, ' '.join([os.path.basename(i[0][2]) for i in unsup_batch])))
+
         unlabeled_x, unlabeled_image_paths = [], []
         augmented_x, augmented_image_paths = [], []
 
@@ -546,6 +563,9 @@ class STAC(pl.LightningModule):
 
         sup_loss = self.frcnn_loss(sup_y_hat)
         loss = sup_loss + self.lam * unsup_loss
+        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+            f.write("GR={} loss={:.6f}\n".format(self.global_rank, loss))
+
         # if self.global_step % 20 < 10 or unsup_loss.sum().item() == 0.0:
         #     loss = sup_loss
         # else:

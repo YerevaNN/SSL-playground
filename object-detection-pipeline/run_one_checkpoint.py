@@ -2,7 +2,6 @@ from pipeline_utils import *
 import os
 import shutil
 import pytorch_lightning as pl
-import torch
 
 from consistency_learning_utils.lightning_model import STAC
 
