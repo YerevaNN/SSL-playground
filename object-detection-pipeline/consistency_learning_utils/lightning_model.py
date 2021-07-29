@@ -154,6 +154,7 @@ class STAC(pl.LightningModule):
         self.weight_decay = self.hparams['weight_decay']
         self.consistency_criterion = self.hparams['consistency_criterion']
         self.testWithStudent = True
+        self.no_val = False
 
         self.batches_per_epoch = self.hparams['batches_per_epoch']
         self.check_val_epochs = max(
@@ -303,7 +304,12 @@ class STAC(pl.LightningModule):
                                          stage=self.stage,
                                          validation_part=self.validation_part,
                                          augmentation=self.hparams['augmentation'])
-        self.train_loader, self.test_loader, self.val_loader = loaders
+        if (os.path.isfile(external_val_file_path)):
+            self.train_loader, self.test_loader, self.val_loader = loaders
+        else:
+            self.train_loader, self.test_loader = loaders
+            self.no_val = True
+
 
     def make_teacher_trainer(self):
         self.t_checkpoint_callback = ModelCheckpoint(
@@ -325,7 +331,7 @@ class STAC(pl.LightningModule):
             min_steps=self.hparams['total_steps_teacher'],
             max_steps=self.hparams['total_steps_teacher'],
             check_val_every_n_epoch=self.check_val_epochs,
-            deterministic=True
+            deterministic=True,
         )
 
 
@@ -374,7 +380,15 @@ class STAC(pl.LightningModule):
         return final_loss
 
     def teacher_supervised_step(self, sup_batch):
-        x, y, image_paths = break_batch(sup_batch)
+        if self.hparams['augmentation'] == 3:
+            x, y, image_paths = [], [], []
+            for i in sup_batch:
+                _, strong = i
+                x.append(strong[0])
+                y.append(strong[1])
+                image_paths.append(strong[2])
+        else:
+            x, y, image_paths = break_batch(sup_batch)
 
         target = make_target_from_y(y)
 
@@ -383,7 +397,15 @@ class STAC(pl.LightningModule):
         return y_hat
 
     def student_supervised_step(self, sup_batch):
-        x, y, image_paths = break_batch(sup_batch)
+        if self.hparams['augmentation'] == 3:
+            x, y, image_paths = [], [], []
+            for i in sup_batch:
+                weak, _ = i
+                x.append(weak[0])
+                y.append(weak[1])
+                image_paths.append(weak[2])
+        else:
+            x, y, image_paths = break_batch(sup_batch)
 
         target = make_target_from_y(y)
         y_hat = self.student(x, target, image_paths)
@@ -516,7 +538,6 @@ class STAC(pl.LightningModule):
 
         sup_batch, unsup_batch = batch_list
         self.student.set_is_supervised(True)
-
         sup_y_hat = self.student_supervised_step(sup_batch)
 
         self.student.set_is_supervised(False)
@@ -565,7 +586,10 @@ class STAC(pl.LightningModule):
 
     # @pl.data_loader
     def val_dataloader(self):
-        return self.val_loader
+        if(not self.no_val):
+            return self.val_loader
+        else:
+            return
 
     def validation_step(self, batch, batch_idx):
         # if self.stage == 0 or self.validation_part == 0:
