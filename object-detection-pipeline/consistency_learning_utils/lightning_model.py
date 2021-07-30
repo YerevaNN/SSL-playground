@@ -156,7 +156,7 @@ class STAC(pl.LightningModule):
         self.testWithStudent = True
         self.no_val = False
 
-        bs = hparams['batch_size']
+        bs = self.hparams['batch_size']
         gpu_num = torch.cuda.device_count()
         self.hparams['batches_per_epoch'] = int((self.hparams['labeled_num'] + bs - 1) / bs / gpu_num)
         self.batches_per_epoch = self.hparams['batches_per_epoch']
