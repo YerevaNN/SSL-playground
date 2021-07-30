@@ -153,7 +153,7 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
             autoaugment.CIFAR10Policy(),
             ToTensor()
         ])
-    elif augmentation == 2 or 3:
+    elif augmentation == 2 or augmentation == 3:
         strong_augment_transform = Compose([
             ToPILImage(),
             autoaugment.CIFAR10Policy(),

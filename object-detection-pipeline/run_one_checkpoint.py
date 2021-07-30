@@ -34,6 +34,7 @@ parser.add_argument('--batch_size', type=int, default=None)
 parser.add_argument('--thresholding_method', type=str, default=None)
 parser.add_argument('--total_steps_teacher_initial', type=int, default=None)
 parser.add_argument('--total_steps_student_initial', type=int, default=None)
+parser.add_argument('--checkpoint_path', type=str, default=None)
 
 args = parser.parse_args()
 

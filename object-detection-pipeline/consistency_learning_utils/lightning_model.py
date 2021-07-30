@@ -83,7 +83,7 @@ def model_changed_classifier(reuse_classifier=False, initialize=False, class_num
     Returns:
         Initialized model
     """
-    pretrained = initialize == 'full'
+    pretrained = initialize == 'full' | initialize == 'from_checkpoint'
     backbone = initialize == 'backbone'
 
     if reuse_classifier is False:
@@ -166,7 +166,7 @@ class STAC(pl.LightningModule):
         self.save_dir_name_teacher = os.path.join(version_folder, 'teacher')
         self.save_dir_name_student = os.path.join(version_folder, 'student')
         self.output_csv = os.path.join(version_folder, 'output.csv')
-
+        gpu_num = torch.cuda.device_count()
         print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
             self.hparams['initialization'], self.hparams['reuse_classifier']
         ))
@@ -586,117 +586,116 @@ class STAC(pl.LightningModule):
     def val_dataloader(self):
         if(not self.no_val):
             return self.val_loader
-        else:
-            return
 
     def validation_step(self, batch, batch_idx):
         # if self.stage == 0 or self.validation_part == 0:
         #     return {}
+        if(not self.no_val):
+            x, y, image_paths = batch
 
-        x, y, image_paths = batch
+            student_y_hat = self.student_forward(x, image_paths=image_paths)
+            teacher_y_hat = self.teacher_forward(x, image_paths=image_paths)
 
-        student_y_hat = self.student_forward(x, image_paths=image_paths)
-        teacher_y_hat = self.teacher_forward(x, image_paths=image_paths)
+            batch_size = len(student_y_hat)
 
-        batch_size = len(student_y_hat)
+            self.validation_images += batch_size
 
-        self.validation_images += batch_size
+            for i in range(batch_size):
+                student_pred_for_mAP = []
+                teacher_pred_for_mAP = []
+                truth_for_mAP = []
+                img_id = image_paths[i]
 
-        for i in range(batch_size):
-            student_pred_for_mAP = []
-            teacher_pred_for_mAP = []
-            truth_for_mAP = []
-            img_id = image_paths[i]
+                student_boxes = student_y_hat[i]['boxes'].cpu().numpy()
+                student_labels = student_y_hat[i]['labels'].cpu().numpy()
+                student_scores = student_y_hat[i]['scores'].cpu().numpy()
 
-            student_boxes = student_y_hat[i]['boxes'].cpu().numpy()
-            student_labels = student_y_hat[i]['labels'].cpu().numpy()
-            student_scores = student_y_hat[i]['scores'].cpu().numpy()
+                teacher_boxes = teacher_y_hat[i]['boxes'].cpu().numpy()
+                teacher_labels = teacher_y_hat[i]['labels'].cpu().numpy()
+                teacher_scores = teacher_y_hat[i]['scores'].cpu().numpy()
 
-            teacher_boxes = teacher_y_hat[i]['boxes'].cpu().numpy()
-            teacher_labels = teacher_y_hat[i]['labels'].cpu().numpy()
-            teacher_scores = teacher_y_hat[i]['scores'].cpu().numpy()
+                for (j, box) in enumerate(student_boxes):
+                    student_pred_for_mAP.append([box[0], box[1], box[2], box[3],
+                                                 student_labels[j], student_scores[j]])
 
-            for (j, box) in enumerate(student_boxes):
-                student_pred_for_mAP.append([box[0], box[1], box[2], box[3],
-                                             student_labels[j], student_scores[j]])
+                for (j, box) in enumerate(teacher_boxes):
+                    teacher_pred_for_mAP.append([box[0], box[1], box[2], box[3],
+                                                 teacher_labels[j], teacher_scores[j]])
 
-            for (j, box) in enumerate(teacher_boxes):
-                teacher_pred_for_mAP.append([box[0], box[1], box[2], box[3],
-                                             teacher_labels[j], teacher_scores[j]])
+                for box in y[i]:
+                    xmin = int(box['bndbox']['xmin'])
+                    xmax = int(box['bndbox']['xmax'])
+                    ymin = int(box['bndbox']['ymin'])
+                    ymax = int(box['bndbox']['ymax'])
+                    truth_for_mAP.append([xmin, ymin, xmax, ymax, int(box['label']), 0, 0])
 
-            for box in y[i]:
-                xmin = int(box['bndbox']['xmin'])
-                xmax = int(box['bndbox']['xmax'])
-                ymin = int(box['bndbox']['ymin'])
-                ymax = int(box['bndbox']['ymax'])
-                truth_for_mAP.append([xmin, ymin, xmax, ymax, int(box['label']), 0, 0])
+                self.student_mAP.add(np.array(student_pred_for_mAP), np.array(truth_for_mAP))
+                self.teacher_mAP.add(np.array(teacher_pred_for_mAP), np.array(truth_for_mAP))
+                self.validation_teacher_boxes += len(teacher_pred_for_mAP)
+                self.validation_student_boxes += len(student_pred_for_mAP)
+                self.prediction_cache[img_id] = {
+                    "student_pred": student_pred_for_mAP,
+                    "teacher_pred": teacher_pred_for_mAP,
+                    "truth": truth_for_mAP
+                }
 
-            self.student_mAP.add(np.array(student_pred_for_mAP), np.array(truth_for_mAP))
-            self.teacher_mAP.add(np.array(teacher_pred_for_mAP), np.array(truth_for_mAP))
-            self.validation_teacher_boxes += len(teacher_pred_for_mAP)
-            self.validation_student_boxes += len(student_pred_for_mAP)
-            self.prediction_cache[img_id] = {
-                "student_pred": student_pred_for_mAP,
-                "teacher_pred": teacher_pred_for_mAP,
-                "truth": truth_for_mAP
-            }
-
-        return {}
+            return {}
 
     def validation_epoch_end(self, results):
-        self.validation_counter += 1
+        if(not self.no_val):
+            self.validation_counter += 1
 
-        # mAP1 = self.mAP.value(iou_thresholds=0.5, recall_thresholds=np.arange(0., 1.1, 0.1))['mAP']
-        ious = np.arange(0.5, 1.0, 0.05)
-        student_mAP2 = self.student_mAP.value(iou_thresholds=0.5)['mAP']
-        student_mAP3 = self.student_mAP.value(iou_thresholds=ious,
-                              recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
+            # mAP1 = self.mAP.value(iou_thresholds=0.5, recall_thresholds=np.arange(0., 1.1, 0.1))['mAP']
+            ious = np.arange(0.5, 1.0, 0.05)
+            student_mAP2 = self.student_mAP.value(iou_thresholds=0.5)['mAP']
+            student_mAP3 = self.student_mAP.value(iou_thresholds=ious,
+                                  recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
 
-        self.logger.experiment.track(float(student_mAP2), name='map2', model=False, stage=self.stage)
-        self.logger.experiment.track(float(student_mAP3['mAP']), name='mAP5095', model=False, stage=self.stage)
-        for iou in ious:
+            self.logger.experiment.track(float(student_mAP2), name='map2', model=False, stage=self.stage)
+            self.logger.experiment.track(float(student_mAP3['mAP']), name='mAP5095', model=False, stage=self.stage)
+            for iou in ious:
+                self.logger.experiment.track(
+                    float(np.mean([x['ap'] for x in student_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
+                    model=False, stage=self.stage)
+            teacher_mAP2 = self.teacher_mAP.value(iou_thresholds=0.5)['mAP']
+            teacher_mAP3 = self.teacher_mAP.value(iou_thresholds=ious,
+                                  recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
+
+            self.logger.experiment.track(float(teacher_mAP2), name='map2', model=True, stage=self.stage)
+            self.logger.experiment.track(float(teacher_mAP3['mAP']), name='mAP5095', model=True, stage=self.stage)
+            for iou in ious:
+                self.logger.experiment.track(
+                    float(np.mean([x['ap'] for x in teacher_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
+                    model=True, stage=self.stage)
+
+            # val_loss as a surrogate for mAP
+            val_loss = 1 - student_mAP2
+            if self.onTeacher:
+                val_loss = 1 - teacher_mAP2
+
+            print('mAP: ', 1 - val_loss)
+            print('best_mAP: ', 1 - self.best_val_loss)
+
+            if self.onTeacher:
+                self.best_teacher_val = min(self.best_teacher_val, val_loss)
+            else:
+                self.best_student_val = min(self.best_student_val, val_loss)
+            self.best_val_loss = min(self.best_val_loss, val_loss)
+
+            self.store_predictions()
+
             self.logger.experiment.track(
-                float(np.mean([x['ap'] for x in student_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
-                model=False, stage=self.stage)
-        teacher_mAP2 = self.teacher_mAP.value(iou_thresholds=0.5)['mAP']
-        teacher_mAP3 = self.teacher_mAP.value(iou_thresholds=ious,
-                              recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
-
-        self.logger.experiment.track(float(teacher_mAP2), name='map2', model=True, stage=self.stage)
-        self.logger.experiment.track(float(teacher_mAP3['mAP']), name='mAP5095', model=True, stage=self.stage)
-        for iou in ious:
+                self.validation_teacher_boxes / self.validation_images,
+                name='val_teacher_boxes', model=True, stage=self.stage)
             self.logger.experiment.track(
-                float(np.mean([x['ap'] for x in teacher_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
-                model=True, stage=self.stage)
+                self.validation_student_boxes / self.validation_images,
+                name='val_student_boxes', model=False, stage=self.stage)
 
-        # val_loss as a surrogate for mAP
-        val_loss = 1 - student_mAP2
-        if self.onTeacher:
-            val_loss = 1 - teacher_mAP2
+            self.custom_validation_start()
 
-        print('mAP: ', 1 - val_loss)
-        print('best_mAP: ', 1 - self.best_val_loss)
-
-        if self.onTeacher:
-            self.best_teacher_val = min(self.best_teacher_val, val_loss)
-        else:
-            self.best_student_val = min(self.best_student_val, val_loss)
-        self.best_val_loss = min(self.best_val_loss, val_loss)
-
-        self.store_predictions()
-
-        self.logger.experiment.track(
-            self.validation_teacher_boxes / self.validation_images,
-            name='val_teacher_boxes', model=True, stage=self.stage)
-        self.logger.experiment.track(
-            self.validation_student_boxes / self.validation_images,
-            name='val_student_boxes', model=False, stage=self.stage)
-
-        self.custom_validation_start()
-
-        return {
-            'val_loss': -self.validation_counter
-        }
+            return {
+                'val_loss': -self.validation_counter
+            }
 
     def store_predictions(self):
         if self.onTeacher:
