@@ -61,9 +61,10 @@ if __name__ == "__main__":
         hparams = json.load(f)
 
     with open(labeled_file_path) as f:
-        num_labeled = len(f.readlines())
+        labeled_num = len(f.readlines())
 
     hparams['class_num'] = args.class_num
+    hparams['labeled_num'] = labeled_num
     hparams['stage'] = args.stage
     hparams['phase_folder'] = phase_folder
     hparams['session_id'] = args.session_id
@@ -82,7 +83,6 @@ if __name__ == "__main__":
 
     hparams['total_steps_teacher'] = hparams['total_steps_teacher_initial'] + args.stage * hparams['total_steps_teacher_stage_inc']
     hparams['total_steps_student'] = hparams['total_steps_student_initial'] + args.stage * hparams['total_steps_student_stage_inc']
-    hparams['batches_per_epoch'] = int((num_labeled + hparams['batch_size'] - 1) / hparams['batch_size'])
 
     pl.seed_everything(hparams['seed'])
 

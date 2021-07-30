@@ -156,6 +156,9 @@ class STAC(pl.LightningModule):
         self.testWithStudent = True
         self.no_val = False
 
+        bs = hparams['batch_size']
+        gpu_num = 4 ## TODO: get the real number
+        self.hparams['batches_per_epoch'] = int((hparams['labeled_num'] + bs - 1) / bs / gpu_num)
         self.batches_per_epoch = self.hparams['batches_per_epoch']
         self.check_val_epochs = max(
             1, self.hparams['check_val_steps'] // self.hparams['batches_per_epoch'])
@@ -667,6 +670,9 @@ class STAC(pl.LightningModule):
 
     def validation_epoch_end(self, results):
         self.validation_counter += 1
+
+        # tmp = self.gather_all(self.prediction_cache)
+
 
         # mAP1 = self.mAP.value(iou_thresholds=0.5, recall_thresholds=np.arange(0., 1.1, 0.1))['mAP']
         ious = np.arange(0.5, 1.0, 0.05)
