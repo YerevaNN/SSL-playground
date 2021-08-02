@@ -193,9 +193,11 @@ def main(_):
             with open(os.path.join(current_task_dir, 'stage{}.json'.format(stage)), 'w') as f:
                 json.dump(class_id_to_name, f)
 
-            cmd = 'python run_one_checkpoint.py --output_csv {} --session_id {} --dataset_name {} --phase {} --stage {} --class_num {}'.format(
+            cmd = 'python run_one_checkpoint.py --output_csv {} --session_id {} --dataset_name {} ' \
+                  '--total_steps_teacher_initial 10 --total_steps_student_initial 10 ' \
+                  '--phase {} --stage {} --class_num {} --experiment_name {} '.format(
                 output_csv, task['session_token'], task['session']['Session_Status']['current_dataset']['name'], phase,
-                stage, len(class_id_to_name.keys()))
+                stage, len(class_id_to_name.keys()), 'pipeline_{}'.format(task['session_token']))
             if True:
                 print("Starting: {}".format(cmd))
                 os.system(cmd)
