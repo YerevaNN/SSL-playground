@@ -6,6 +6,7 @@ TEAM_SECRET = os.environ['LWLL_TA1_TEAM_SECRET']
 GOV_SECRET = os.environ['LWLL_TA1_GOVTEAM_SECRET']
 headers = {'user_secret': TEAM_SECRET, "govteam_secret":GOV_SECRET}
 url = os.environ['LWLL_TA1_API_ENDPOINT']
+task_id = os.environ['LWLL_TA1_PROB_TASK']
 r = requests.get(f"{url}/list_tasks", headers=headers)
 tasks = r.json()['tasks']
 od_tasks = []
@@ -26,10 +27,13 @@ for task in tasks:
         ]))
 
 for task in od_tasks:
+    if task_id.lower() != 'all' and task != task_id:
+        continue
+
     try:
         print('================ Starting Task: {} ================'.format(task))
         cmd = 'python run_pipeline.py --task={} --session=coral-obj-det-{}'.format(task, task[:5])
-        # os.system(cmd)
+        os.system(cmd)
         print(cmd)
         print('================ Task: {} Has Finished ================'.format(task))
         print()

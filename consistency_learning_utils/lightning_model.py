@@ -83,7 +83,7 @@ def model_changed_classifier(reuse_classifier=False, initialize=False, class_num
     Returns:
         Initialized model
     """
-    pretrained = initialize == 'full' | initialize == 'from_checkpoint'
+    pretrained = initialize == 'full'  # TODO:
     backbone = initialize == 'backbone'
 
     if reuse_classifier is False:
@@ -159,7 +159,7 @@ class STAC(pl.LightningModule):
         bs = self.hparams['batch_size']
         gpu_num = torch.cuda.device_count()
         print("GPUs count ", gpu_num)
-        self.hparams['batches_per_epoch'] = int((self.hparams['labeled_num'] + bs - 1) / bs / gpu_num)
+        self.hparams['batches_per_epoch'] = max(1, int((self.hparams['labeled_num'] + bs - 1) / bs / max(1, gpu_num)))
         self.batches_per_epoch = self.hparams['batches_per_epoch']
         self.check_val_epochs = max(
             1, self.hparams['check_val_steps'] // self.hparams['batches_per_epoch'])
