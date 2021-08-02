@@ -196,7 +196,7 @@ def main(_):
             cmd = 'python run_one_checkpoint.py --output_csv {} --session_id {} --dataset_name {} --phase {} --stage {} --class_num {}'.format(
                 output_csv, task['session_token'], task['session']['Session_Status']['current_dataset']['name'], phase,
                 stage, len(class_id_to_name.keys()))
-            if False and stage >= 3:
+            if True:
                 print("Starting: {}".format(cmd))
                 os.system(cmd)
                 print("Finished: {}".format(cmd))

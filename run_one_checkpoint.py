@@ -83,8 +83,21 @@ if __name__ == "__main__":
             print("Overriding {} to {}".format(key, argsdict[key]))
             hparams[key] = argsdict[key]
 
-    hparams['total_steps_teacher'] = hparams['total_steps_teacher_initial'] + args.stage * hparams['total_steps_teacher_stage_inc']
-    hparams['total_steps_student'] = hparams['total_steps_student_initial'] + args.stage * hparams['total_steps_student_stage_inc']
+    if 'total_steps_teacher_initial' not in argsdict or argsdict['total_steps_teacher_initial'] is None:
+        teacher_steps_defaults = {
+            0: 750,
+            1: 750,
+            2: 750,
+            3: 750,
+            4: 750,
+            5: 1500,
+            6: 2500,
+            7: 5000,
+        }
+        hparams['total_steps_teacher_initial'] = teacher_steps_defaults[args.stage]
+
+    hparams['total_steps_teacher'] = hparams['total_steps_teacher_initial'] #+ args.stage * hparams['total_steps_teacher_stage_inc']
+    hparams['total_steps_student'] = hparams['total_steps_student_initial'] #+ args.stage * hparams['total_steps_student_stage_inc']
 
     pl.seed_everything(hparams['seed'])
 
@@ -139,13 +152,14 @@ if __name__ == "__main__":
 
     hparams['version_name'] = best_version_name
 
+    # TODO: force one GPU!
     best_model = STAC(argparse.Namespace(**hparams))
     best_model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
                             external_val_file_path, external_val_label_root, label_root)
     eps = 1e-10
-    best_model.set_test_with_student(True)
-    if args.stage == 7: #best_student_loss - eps > best_teacher_loss or
-        best_model.set_test_with_student(False)
+    best_model.set_test_with_student(False)
+    # if args.stage == 7: #best_student_loss - eps > best_teacher_loss or
+    #     best_model.set_test_with_student(False)
     best_model.test_from_best_checkpoint()
     shutil.copy(best_model.output_csv, args.output_csv)
 
