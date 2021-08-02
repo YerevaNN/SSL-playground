@@ -1,6 +1,8 @@
-__pycache__/
-.idea/
-logs/
+.idea
+__pycache__
 checkpoints/
-.ipynb_checkpoints/
-cifar-10-batches-py/
+checkpoints_student/
+checkpoints_teacher/
+env.list
+.aim/
+session_data/

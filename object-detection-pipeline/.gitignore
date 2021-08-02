@@ -1,8 +1,0 @@
-.idea
-__pycache__
-checkpoints/
-checkpoints_student/
-checkpoints_teacher/
-env.list
-.aim/
-session_data/

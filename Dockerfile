@@ -40,7 +40,7 @@ COPY requirements.txt /tmp/
 RUN cd /tmp/ && pip install -r requirements.txt
 
 WORKDIR /home/run_pipeline
-COPY ./ /home/run_pipeline/
+COPY object-detection-pipeline /home/run_pipeline/
 RUN cd /home/run_pipeline/
 RUN ls
 RUN python setup.py build develop
