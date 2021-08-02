@@ -628,7 +628,7 @@ class STAC(pl.LightningModule):
 
         self.validation_images += batch_size
 
-        output_tensor = torch.zeros(size=(batch_size, 3, 100, 7))
+        output_tensor = torch.zeros(size=(batch_size, 3, 200, 7))
         # 3 = truth, teacher, student
 
         for i in range(batch_size):
@@ -662,7 +662,7 @@ class STAC(pl.LightningModule):
 
             # self.student_mAP.add(np.array(student_pred_for_mAP), np.array(truth_for_mAP))
             # self.teacher_mAP.add(np.array(teacher_pred_for_mAP), np.array(truth_for_mAP))
-            output_tensor[i][0][:len(truth_for_mAP)] = torch.tensor(np.array(truth_for_mAP))
+            output_tensor[i][0][:min(200,len(truth_for_mAP))] = torch.tensor(np.array(truth_for_mAP)[:200])
             output_tensor[i][1][:len(teacher_pred_for_mAP),:6] = torch.tensor(np.array(teacher_pred_for_mAP))
             output_tensor[i][2][:len(student_pred_for_mAP),:6] = torch.tensor(np.array(student_pred_for_mAP))
 
@@ -679,12 +679,12 @@ class STAC(pl.LightningModule):
     def validation_epoch_end(self, results):
         self.validation_counter += 1
 
-        print("GR={} before all_gather: results: len={}".format(self.global_rank, len(results)))
+        # print("GR={} before all_gather: results: len={}".format(self.global_rank, len(results)))
         results = self.all_gather(results)
-        print("GR={} all_gather: results: len={}".format(self.global_rank, len(results)))
+        # print("GR={} all_gather: results: len={}".format(self.global_rank, len(results)))
 
         def filter_non_zero(tensor, lim=6):
-            return [row.cpu().numpy()[:lim] for row in tensor if row.sum() > 0]
+            return np.array([row.cpu().numpy()[:lim] for row in tensor if row.sum() > 0])
 
         if self.global_rank == 0:
             for batch_pairs in results:
@@ -693,8 +693,8 @@ class STAC(pl.LightningModule):
                         truth = filter_non_zero(image[0], lim=7)
                         teacher_pred = filter_non_zero(image[1])
                         student_pred = filter_non_zero(image[2])
-                        self.student_mAP.add(np.array(student_pred), np.array(truth))
-                        self.teacher_mAP.add(np.array(teacher_pred), np.array(truth))
+                        self.student_mAP.add(student_pred, truth)
+                        self.teacher_mAP.add(teacher_pred, truth)
 
             # mAP1 = self.mAP.value(iou_thresholds=0.5, recall_thresholds=np.arange(0., 1.1, 0.1))['mAP']
             ious = np.arange(0.5, 1.0, 0.05)
