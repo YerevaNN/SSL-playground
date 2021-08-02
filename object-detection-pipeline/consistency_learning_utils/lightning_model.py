@@ -156,6 +156,10 @@ class STAC(pl.LightningModule):
         self.testWithStudent = True
         self.no_val = False
 
+        bs = self.hparams['batch_size']
+        gpu_num = torch.cuda.device_count()
+        print("GPUs count ", gpu_num)
+        self.hparams['batches_per_epoch'] = int((self.hparams['labeled_num'] + bs - 1) / bs / gpu_num)
         self.batches_per_epoch = self.hparams['batches_per_epoch']
         self.check_val_epochs = max(
             1, self.hparams['check_val_steps'] // self.hparams['batches_per_epoch'])
@@ -184,8 +188,8 @@ class STAC(pl.LightningModule):
             gamma=self.hparams['gamma'],
             box_score_thresh=self.hparams['box_score_thresh'])
 
-        self.teacher.cuda()
-        self.student.cuda()
+        # self.teacher.cuda()
+        # self.student.cuda()
 
         self.aim_logger = AimLogger(
             experiment=self.hparams['version_name']
@@ -290,6 +294,12 @@ class STAC(pl.LightningModule):
 
         self.teacher.load_state_dict(new_teacher_dict)
 
+        key = 'roi_heads.box_head.fc6.weight'
+        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+            f.write("After EMA: GR={} key={} max value={}\n".format(
+                self.global_rank, key, self.teacher.state_dict()[key].max()
+            ))
+
     def set_datasets(self, labeled_file_path, unlabeled_file_path, testing_file_path,
                      external_val_file_path, external_val_label_root, label_root):
 
@@ -323,6 +333,7 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
+            accelerator='ddp',
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
             logger=self.aim_logger,
@@ -347,6 +358,7 @@ class STAC(pl.LightningModule):
 
         self.student_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
+            accelerator='ddp',
             callbacks=[checkpoint_callback],
             logger=self.aim_logger,
             num_sanity_val_steps=0,
@@ -393,6 +405,9 @@ class STAC(pl.LightningModule):
 
         y_hat = self.teacher(x, target, image_paths)
 
+        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+            f.write("GR={} images=({})\n".format(
+                self.global_rank, ' '.join([os.path.basename(i[2]) for i in sup_batch])))
         return y_hat
 
     def student_supervised_step(self, sup_batch):
@@ -409,9 +424,17 @@ class STAC(pl.LightningModule):
         target = make_target_from_y(y)
         y_hat = self.student(x, target, image_paths)
 
+        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+            f.write("Supervised GR={} images=({})\n".format(
+                self.global_rank, ' '.join([os.path.basename(i[2]) for i in sup_batch])))
+
         return y_hat
 
     def student_unsupervised_step(self, unsup_batch):
+        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+            f.write("Unsupervised GR={} images=({})\n".format(
+            self.global_rank, ' '.join([os.path.basename(i[0][2]) for i in unsup_batch])))
+
         unlabeled_x, unlabeled_image_paths = [], []
         augmented_x, augmented_image_paths = [], []
 
@@ -545,6 +568,9 @@ class STAC(pl.LightningModule):
 
         sup_loss = self.frcnn_loss(sup_y_hat)
         loss = sup_loss + self.lam * unsup_loss
+        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+            f.write("GR={} loss={:.6f}\n".format(self.global_rank, loss))
+
         # if self.global_step % 20 < 10 or unsup_loss.sum().item() == 0.0:
         #     loss = sup_loss
         # else:
@@ -602,6 +628,9 @@ class STAC(pl.LightningModule):
 
         self.validation_images += batch_size
 
+        output_tensor = torch.zeros(size=(batch_size, 3, 200, 7))
+        # 3 = truth, teacher, student
+
         for i in range(batch_size):
             student_pred_for_mAP = []
             teacher_pred_for_mAP = []
@@ -631,8 +660,12 @@ class STAC(pl.LightningModule):
                 ymax = int(box['bndbox']['ymax'])
                 truth_for_mAP.append([xmin, ymin, xmax, ymax, int(box['label']), 0, 0])
 
-            self.student_mAP.add(np.array(student_pred_for_mAP), np.array(truth_for_mAP))
-            self.teacher_mAP.add(np.array(teacher_pred_for_mAP), np.array(truth_for_mAP))
+            # self.student_mAP.add(np.array(student_pred_for_mAP), np.array(truth_for_mAP))
+            # self.teacher_mAP.add(np.array(teacher_pred_for_mAP), np.array(truth_for_mAP))
+            output_tensor[i][0][:min(200,len(truth_for_mAP))] = torch.tensor(np.array(truth_for_mAP)[:200])
+            output_tensor[i][1][:len(teacher_pred_for_mAP),:6] = torch.tensor(np.array(teacher_pred_for_mAP))
+            output_tensor[i][2][:len(student_pred_for_mAP),:6] = torch.tensor(np.array(student_pred_for_mAP))
+
             self.validation_teacher_boxes += len(teacher_pred_for_mAP)
             self.validation_student_boxes += len(student_pred_for_mAP)
             self.prediction_cache[img_id] = {
@@ -641,52 +674,70 @@ class STAC(pl.LightningModule):
                 "truth": truth_for_mAP
             }
 
-        return {}
+        return output_tensor.cuda()
 
     def validation_epoch_end(self, results):
         if self.no_val:
             return
         self.validation_counter += 1
 
-        # mAP1 = self.mAP.value(iou_thresholds=0.5, recall_thresholds=np.arange(0., 1.1, 0.1))['mAP']
-        ious = np.arange(0.5, 1.0, 0.05)
-        student_mAP2 = self.student_mAP.value(iou_thresholds=0.5)['mAP']
-        student_mAP3 = self.student_mAP.value(iou_thresholds=ious,
-                              recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
+        # print("GR={} before all_gather: results: len={}".format(self.global_rank, len(results)))
+        results = self.all_gather(results)
+        # print("GR={} all_gather: results: len={}".format(self.global_rank, len(results)))
 
-        self.logger.experiment.track(float(student_mAP2), name='map2', model=False, stage=self.stage)
-        self.logger.experiment.track(float(student_mAP3['mAP']), name='mAP5095', model=False, stage=self.stage)
-        for iou in ious:
-            self.logger.experiment.track(
-                float(np.mean([x['ap'] for x in student_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
-                model=False, stage=self.stage)
-        teacher_mAP2 = self.teacher_mAP.value(iou_thresholds=0.5)['mAP']
-        teacher_mAP3 = self.teacher_mAP.value(iou_thresholds=ious,
-                              recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
+        def filter_non_zero(tensor, lim=6):
+            return np.array([row.cpu().numpy()[:lim] for row in tensor if row.sum() > 0])
 
-        self.logger.experiment.track(float(teacher_mAP2), name='map2', model=True, stage=self.stage)
-        self.logger.experiment.track(float(teacher_mAP3['mAP']), name='mAP5095', model=True, stage=self.stage)
-        for iou in ious:
-            self.logger.experiment.track(
-                float(np.mean([x['ap'] for x in teacher_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
-                model=True, stage=self.stage)
+        if self.global_rank == 0:
+            for batch_pairs in results:
+                for batch in batch_pairs:
+                    for image in batch: # (3, 100, 6)
+                        truth = filter_non_zero(image[0], lim=7)
+                        teacher_pred = filter_non_zero(image[1])
+                        student_pred = filter_non_zero(image[2])
+                        self.student_mAP.add(student_pred, truth)
+                        self.teacher_mAP.add(teacher_pred, truth)
 
-        # val_loss as a surrogate for mAP
-        val_loss = 1 - student_mAP2
-        if self.onTeacher:
-            val_loss = 1 - teacher_mAP2
+            # mAP1 = self.mAP.value(iou_thresholds=0.5, recall_thresholds=np.arange(0., 1.1, 0.1))['mAP']
+            ious = np.arange(0.5, 1.0, 0.05)
+            student_mAP2 = self.student_mAP.value(iou_thresholds=0.5)['mAP']
+            student_mAP3 = self.student_mAP.value(iou_thresholds=ious,
+                                  recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
 
-        print('mAP: ', 1 - val_loss)
-        print('best_mAP: ', 1 - self.best_val_loss)
+            self.logger.experiment.track(float(student_mAP2), name='map2', model=False, stage=self.stage)
+            self.logger.experiment.track(float(student_mAP3['mAP']), name='mAP5095', model=False, stage=self.stage)
+            for iou in ious:
+                self.logger.experiment.track(
+                    float(np.mean([x['ap'] for x in student_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
+                    model=False, stage=self.stage)
+            teacher_mAP2 = self.teacher_mAP.value(iou_thresholds=0.5)['mAP']
+            teacher_mAP3 = self.teacher_mAP.value(iou_thresholds=ious,
+                                  recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
 
-        if self.onTeacher:
-            self.best_teacher_val = min(self.best_teacher_val, val_loss)
-        else:
-            self.best_student_val = min(self.best_student_val, val_loss)
-        self.best_val_loss = min(self.best_val_loss, val_loss)
+            self.logger.experiment.track(float(teacher_mAP2), name='map2', model=True, stage=self.stage)
+            self.logger.experiment.track(float(teacher_mAP3['mAP']), name='mAP5095', model=True, stage=self.stage)
+            for iou in ious:
+                self.logger.experiment.track(
+                    float(np.mean([x['ap'] for x in teacher_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
+                    model=True, stage=self.stage)
+
+            # val_loss as a surrogate for mAP
+            val_loss = 1 - student_mAP2
+            if self.onTeacher:
+                val_loss = 1 - teacher_mAP2
+
+            print('mAP: ', 1 - val_loss)
+            print('best_mAP: ', 1 - self.best_val_loss)
+
+            if self.onTeacher:
+                self.best_teacher_val = min(self.best_teacher_val, val_loss)
+            else:
+                self.best_student_val = min(self.best_student_val, val_loss)
+            self.best_val_loss = min(self.best_val_loss, val_loss)
 
         self.store_predictions()
 
+        # TODO: two metrics below are from one gpu only!
         self.logger.experiment.track(
             self.validation_teacher_boxes / self.validation_images,
             name='val_teacher_boxes', model=True, stage=self.stage)
@@ -705,7 +756,7 @@ class STAC(pl.LightningModule):
             folder = self.save_dir_name_teacher
         else:
             folder = self.save_dir_name_student
-        filename = os.path.join(folder, "{}.npy".format(self.global_step))
+        filename = os.path.join(folder, "{}_{}.npy".format(self.global_step, self.global_rank))
         os.makedirs(folder, exist_ok=True)
         np.save(filename, self.prediction_cache)
 
