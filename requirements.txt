@@ -6,3 +6,4 @@ pytorch-lightning==1.2.8
 pillow
 pandas
 test-tube
+aim
