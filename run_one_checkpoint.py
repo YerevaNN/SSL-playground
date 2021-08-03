@@ -78,7 +78,7 @@ if __name__ == "__main__":
                 'weight_decay', 'EMA_keep_rate', 'gamma',
                 'initialization', 'reuse_classifier', 'check_val_steps', 'batch_size',
                 'box_score_thresh', 'augmentation', 'teacher_init_path',
-                'total_steps_teacher_initial', 'total_steps_student_initial']:
+                'total_steps_teacher_initial', 'total_steps_student_initial', 'skip_burn_in']:
         if key in argsdict and argsdict[key] is not None:
             print("Overriding {} to {}".format(key, argsdict[key]))
             hparams[key] = argsdict[key]

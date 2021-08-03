@@ -83,7 +83,7 @@ def model_changed_classifier(reuse_classifier=False, initialize=False, class_num
     Returns:
         Initialized model
     """
-    pretrained = initialize == 'full'  # TODO:
+    pretrained = initialize == 'full'
     backbone = initialize == 'backbone'
 
     if reuse_classifier is False:
@@ -174,8 +174,10 @@ class STAC(pl.LightningModule):
         print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
             self.hparams['initialization'], self.hparams['reuse_classifier']
         ))
+        self.teacher_init = 'full' if (self.hparams['teacher_init_path'] and (not self.hparams['skip_burn_in'])) else \
+            self.hparams['initialization']
         self.teacher = model_changed_classifier(
-            initialize=self.hparams['initialization'],
+            initialize=self.teacher_init,
             reuse_classifier=self.hparams['reuse_classifier'],
             class_num=self.hparams['class_num'],
             gamma=self.hparams['gamma'],
@@ -836,7 +838,15 @@ class STAC(pl.LightningModule):
         return optimizer
 
     def fit_model(self):
-        if self.hparams['teacher_init_path'] == False:
+        if self.hparams['teacher_init_path']:
+            if self.hparams['skip_burn_in']:
+                print("Loading teacher model from: {}".format(self.hparams['teacher_init_path']))
+                self.load_checkpoint_teacher(self.hparams['teacher_init_path'])
+            else:
+                print("Loading teacher model from: {} and fit".format(self.hparams['teacher_init_path']))
+                self.load_checkpoint_teacher(self.hparams['teacher_init_path'])
+                self.teacher_trainer.fit(self)
+        else:
             print("Starting teacher")
             self.onTeacher = True
             print("Will train for {} epochs, validate every {} epochs".format(
@@ -847,9 +857,6 @@ class STAC(pl.LightningModule):
             self.validation_counter = 0
             self.teacher_trainer.fit(self)
             print("Finished teacher")
-        else:
-            print("Loading teacher model from: {}".format(self.hparams['teacher_init_path']))
-            self.load_checkpoint_teacher(self.hparams['teacher_init_path'])
 
         # self.load_best_teacher() # TODO I do not think this will always work
         # The best teacher is the last one, as we do not know how to measure what it the best one
