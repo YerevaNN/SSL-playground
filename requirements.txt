@@ -8,3 +8,4 @@ pandas
 test-tube
 aim
 torchvision==0.8.2
+mean_average_precision
