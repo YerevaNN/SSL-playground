@@ -7,3 +7,4 @@ pillow
 pandas
 test-tube
 aim
+torchvision==0.8.2
