@@ -267,7 +267,6 @@ class STAC(pl.LightningModule):
         self.test()
 
     def test_from_best_checkpoint(self):
-        os.environ["CUDA_VISIBLE_DEVICES"] = ["0"]
         if self.testWithStudent:
             ckpt_path = self.save_dir_name_student
         else:

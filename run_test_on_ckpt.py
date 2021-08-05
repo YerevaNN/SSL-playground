@@ -18,6 +18,7 @@ import numpy as np
 from collections import defaultdict
 
 def main(_):
+    os.environ["CUDA_VISIBLE_DEVICES"] = ["0"]
     FLAGS, resume_session, task = loop.create_default_task()
     phases = ['base', 'adaption']
     for phase in phases:
