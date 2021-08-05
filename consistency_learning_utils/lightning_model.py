@@ -346,6 +346,19 @@ class STAC(pl.LightningModule):
             check_val_every_n_epoch=self.check_val_epochs,
             deterministic=True,
         )
+        self.teacher_test_trainer = Trainer(
+            gpus='0', checkpoint_callback=True,  # what is this?
+            accelerator='ddp',
+            callbacks=[self.t_checkpoint_callback],
+            num_sanity_val_steps=0,
+            logger=self.aim_logger,
+            log_every_n_steps=10, progress_bar_refresh_rate=1,
+            gradient_clip_val=self.hparams['gradient_clip_threshold'],
+            min_steps=self.hparams['total_steps_teacher'],
+            max_steps=self.hparams['total_steps_teacher'],
+            check_val_every_n_epoch=self.check_val_epochs,
+            deterministic=True,
+        )
 
 
     def make_student_trainer(self):
@@ -889,7 +902,7 @@ class STAC(pl.LightningModule):
             self.student_trainer.test(model=self)
         else:
             print('testing with teacher')
-            self.teacher_trainer(gpus="0").test(model=self)
+            self.teacher_test_trainer.test(model=self)
 
     def load(self):
         self.load_from_checkpoint(self.save_dir_name_student)
