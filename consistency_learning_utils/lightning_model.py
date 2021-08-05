@@ -1,6 +1,7 @@
 from argparse import Namespace
 import os
 import csv
+import threading
 import numpy as np
 import json
 
@@ -782,8 +783,8 @@ class STAC(pl.LightningModule):
             for j, box in enumerate(boxes):
                 row = [img_id, scores[j], labels[j], ','.join(["{:.0f}".format(t) for t in box])]
                 rows.append(row)
-
-        self.csvwriter.writerows(rows)
+        with self.threadlock:
+            self.csvwriter.writerows(rows)
 
         return {'test_acc': 0}
 
@@ -883,7 +884,9 @@ class STAC(pl.LightningModule):
         headers = ['id', 'confidence', 'class', 'bbox']
         f = open(self.output_csv, 'w', newline='')
         self.csvwriter = csv.writer(f)
-        self.csvwriter.writerow(headers)
+        self.threadlock = threading.Lock()
+        with self.threadlock:
+            self.csvwriter.writerow(headers)
 
         if self.testWithStudent:
             print('testing with student')
