@@ -13,6 +13,7 @@ from torch import nn
 from collections import OrderedDict
 from pytorch_lightning import Trainer
 from torchvision.utils import save_image
+import threading
 
 from mean_average_precision import MetricBuilder
 
@@ -155,6 +156,7 @@ class STAC(pl.LightningModule):
         self.consistency_criterion = self.hparams['consistency_criterion']
         self.testWithStudent = True
         self.no_val = False
+        self.threadlocker = threading.Lock()
 
         bs = self.hparams['batch_size']
         gpu_num = torch.cuda.device_count()
@@ -773,16 +775,17 @@ class STAC(pl.LightningModule):
             y_hat = self.student_forward(x, image_paths)
         else:
             y_hat = self.teacher_forward(x, image_paths)
-        rows = []
-        for i in range(len(x)):
-            img_id = names[i]  # we should keep image ID somehow in the batch!
-            boxes = y_hat[i]['boxes'].cpu().numpy()  # x_min, y_min, x_max, y_max
-            labels = y_hat[i]['labels'].cpu().numpy()
-            scores = y_hat[i]['scores'].cpu().numpy()
-            for j, box in enumerate(boxes):
-                row = [img_id, scores[j], labels[j], ','.join(["{:.0f}".format(t) for t in box])]
-                rows.append(row)
-        self.csvwriter.writerows(rows)
+        with self.threadlocker:
+            rows = []
+            for i in range(len(x)):
+                img_id = names[i]  # we should keep image ID somehow in the batch!
+                boxes = y_hat[i]['boxes'].cpu().numpy()  # x_min, y_min, x_max, y_max
+                labels = y_hat[i]['labels'].cpu().numpy()
+                scores = y_hat[i]['scores'].cpu().numpy()
+                for j, box in enumerate(boxes):
+                    row = [img_id, scores[j], labels[j], ','.join(["{:.0f}".format(t) for t in box])]
+                    rows.append(row)
+            self.csvwriter.writerows(rows)
 
         return {'test_acc': 0}
 
