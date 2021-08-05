@@ -153,6 +153,7 @@ if __name__ == "__main__":
     hparams['version_name'] = best_version_name
 
     # TODO: force one GPU!
+    os.environ["CUDA_VISIBLE_DEVICES"] = ["0"]
     best_model = STAC(argparse.Namespace(**hparams))
     best_model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
                             external_val_file_path, external_val_label_root, label_root)
