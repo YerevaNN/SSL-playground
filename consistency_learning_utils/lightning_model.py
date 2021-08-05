@@ -267,6 +267,7 @@ class STAC(pl.LightningModule):
         self.test()
 
     def test_from_best_checkpoint(self):
+        os.environ["CUDA_VISIBLE_DEVICES"] = ["0"]
         if self.testWithStudent:
             ckpt_path = self.save_dir_name_student
         else:
@@ -879,7 +880,6 @@ class STAC(pl.LightningModule):
         return (self.best_teacher_val, self.best_student_val)
 
     def test(self):
-        os.environ["CUDA_VISIBLE_DEVICES"] = ["0"]
         headers = ['id', 'confidence', 'class', 'bbox']
         f = open(self.output_csv, 'w', newline='')
         self.csvwriter = csv.writer(f)
