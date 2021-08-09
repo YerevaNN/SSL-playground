@@ -85,16 +85,19 @@ if __name__ == "__main__":
 
     if 'total_steps_teacher_initial' not in argsdict or argsdict['total_steps_teacher_initial'] is None:
         teacher_steps_defaults = {
-            0: 750,
-            1: 750,
-            2: 750,
-            3: 750,
-            4: 750,
-            5: 1500,
-            6: 2500,
-            7: 5000,
+            0: 1000,
+            1: 1000,
+            2: 1000,
+            3: 1000,
+            4: 3000,
+            5: 8000,
+            6: 13000,
+            7: 50000,
         }
         hparams['total_steps_teacher_initial'] = teacher_steps_defaults[args.stage]
+
+    hparams['lr_drop_steps'] = int(hparams['total_steps_teacher_initial'] * 0.8)
+    print("Setting lr_drop_steps to {}".format(hparams['lr_drop_steps']))
 
     hparams['total_steps_teacher'] = hparams['total_steps_teacher_initial'] #+ args.stage * hparams['total_steps_teacher_stage_inc']
     hparams['total_steps_student'] = hparams['total_steps_student_initial'] #+ args.stage * hparams['total_steps_student_stage_inc']

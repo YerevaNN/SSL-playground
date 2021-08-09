@@ -7,10 +7,10 @@
     "teacher_init_path": false,
 
     "total_steps_teacher_initial": 10000,
-    "total_steps_student_initial": 20000,
+    "total_steps_student_initial": 6000,
     "check_val_steps": 1000,
 
-    "learning_rate": 0.04,
+    "learning_rate": 0.02,
     "lr_drop_rate": 10,
     "warmup_steps": 1000,
     "lr_drop_steps": 30000,
@@ -18,14 +18,14 @@
     "momentum": 0.9,
     "weight_decay": 0,
 
-    "student_learning_rate": 0.02,
+    "student_learning_rate": 0.01,
     "student_lr_drop_rate": 10,
     "student_warmup_steps": 1000,
-    "student_lr_drop_steps": 30000,
+    "student_lr_drop_steps": 4000,
     "student_lr_schedule": "warmupWithDrop",
 
     "augmentation": 2,
-    "confidence_threshold": 0.95,
+    "confidence_threshold": 0.8,
     "thresholding_method": "dynamic1",
     "box_score_thresh": 0.005,
     "EMA_keep_rate": 0.996,
