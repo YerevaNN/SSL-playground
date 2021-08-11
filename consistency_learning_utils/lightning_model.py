@@ -845,8 +845,9 @@ class STAC(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=self.momentum,
                               weight_decay=self.weight_decay, nesterov=False)
+        scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=self.lr)
 
-        return optimizer
+        return {'optimizer': optimizer, 'lr_scheduler': scheduler}
 
     def fit_model(self):
         if self.hparams['teacher_init_path']:
