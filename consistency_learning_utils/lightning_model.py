@@ -567,6 +567,7 @@ class STAC(pl.LightningModule):
         self.logger.experiment.track(sup_loss['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(loss.item(), name='loss_sum', model=self.onTeacher, stage=self.stage)
+        self.scheduler.step()
         return {'loss': loss}
 
     def student_training_step(self, batch_list):
@@ -611,6 +612,7 @@ class STAC(pl.LightningModule):
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(loss.item(), name='loss_sum',
                                          model=self.onTeacher, stage=self.stage)
+        self.scheduler.step()
         return {'loss': loss}
 
     def training_step(self, batch_list, batch_idx):
@@ -845,9 +847,10 @@ class STAC(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=self.momentum,
                               weight_decay=self.weight_decay, nesterov=False)
-        scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=self.lr)
+        self.scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=self.lr, step_size_up=500,
+                                                           step_size_down=500)
 
-        return {'optimizer': optimizer, 'lr_scheduler': scheduler}
+        return {'optimizer': optimizer, 'lr_scheduler': self.scheduler}
 
     def fit_model(self):
         if self.hparams['teacher_init_path']:
