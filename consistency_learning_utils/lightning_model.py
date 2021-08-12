@@ -567,7 +567,6 @@ class STAC(pl.LightningModule):
         self.logger.experiment.track(sup_loss['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(loss.item(), name='loss_sum', model=self.onTeacher, stage=self.stage)
-        self.scheduler.step()
         return {'loss': loss}
 
     def student_training_step(self, batch_list):
@@ -612,7 +611,6 @@ class STAC(pl.LightningModule):
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(loss.item(), name='loss_sum',
                                          model=self.onTeacher, stage=self.stage)
-        self.scheduler.step()
         return {'loss': loss}
 
     def training_step(self, batch_list, batch_idx):
@@ -841,6 +839,7 @@ class STAC(pl.LightningModule):
             if not self.onTeacher:
                 pg['weight_decay'] = 0
 
+        self.scheduler.step()
         # update params
         optimizer.step(closure=optimizer_closure)
 
