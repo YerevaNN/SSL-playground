@@ -839,9 +839,9 @@ class STAC(pl.LightningModule):
             if not self.onTeacher:
                 pg['weight_decay'] = 0
 
-        self.scheduler.step()
         # update params
         optimizer.step(closure=optimizer_closure)
+        self.scheduler.step()
 
     def configure_optimizers(self):
         optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=self.momentum,
