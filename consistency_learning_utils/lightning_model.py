@@ -832,8 +832,7 @@ class STAC(pl.LightningModule):
         else:
             raise NotImplementedError
 
-        if not self.onTeacher:
-            curLR = self.scheduler.get_last_lr()[0]
+        curLR = self.scheduler.get_last_lr()[0]
         self.logger.experiment.track(curLR, name='lr', model=self.onTeacher, stage=self.stage)
 
         for pg in optimizer.param_groups:
