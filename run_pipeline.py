@@ -188,7 +188,11 @@ def main(_):
             with open(test_metadata_path, 'w') as f:
                 json.dump(testing_image_metadata, f)
 
-            output_csv = os.path.join(current_task_dir, 'stage{}.csv'.format(stage))
+            if FLAGS.read_outputs_from:
+                output_csv = os.path.join(FLAGS.read_outputs_from, phase, 'stage{}.csv'.format(stage))
+                print("Outputs will be read from {}".format(output_csv))
+            else:
+                output_csv = os.path.join(current_task_dir, 'stage{}.csv'.format(stage))
 
             with open(os.path.join(current_task_dir, 'stage{}.json'.format(stage)), 'w') as f:
                 json.dump(class_id_to_name, f)
@@ -198,7 +202,7 @@ def main(_):
                   '--phase {} --stage {} --class_num {} --experiment_name {} '.format(
                 output_csv, task['session_token'], task['session']['Session_Status']['current_dataset']['name'], phase,
                 stage, len(class_id_to_name.keys()), 'pipeline_{}'.format(task['session_token']))
-            if True:
+            if True and (FLAGS.read_outputs_from is None):
                 print("Starting: {}".format(cmd))
                 os.system(cmd)
                 print("Finished: {}".format(cmd))

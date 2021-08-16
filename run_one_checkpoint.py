@@ -35,6 +35,7 @@ parser.add_argument('--thresholding_method', type=str, default=None)
 parser.add_argument('--total_steps_teacher_initial', type=int, default=None)
 parser.add_argument('--total_steps_student_initial', type=int, default=None)
 parser.add_argument('--skip_burn_in', action='store_true')  # if true, student will start immediately
+parser.add_argument('--inference_only', action='store_true')  # do not train. attempt to test with the checkpoint
 
 
 args = parser.parse_args()
@@ -104,65 +105,78 @@ if __name__ == "__main__":
 
     pl.seed_everything(hparams['seed'])
 
-    best_version_name = ''
-    best_val_loss = 10000000
-    best_student_loss = 10000000
-    best_teacher_loss = 10000000
-    base_checkpoint_val_loss = 10000000
+    if not args.inference_only:
 
-    loss_dict = {}
+        best_version_name = ''
+        best_val_loss = 10000000
+        best_student_loss = 10000000
+        best_teacher_loss = 10000000
+        base_checkpoint_val_loss = 10000000
 
-    attempts_by_stage = [1, 1, 1, 1, 1, 1, 1, 1]
-    attempts = attempts_by_stage[args.stage]
+        loss_dict = {}
 
-    best_base_checkpoint_filename = './checkpoints/best_base_checkpoint.pth'
+        attempts_by_stage = [1, 1, 1, 1, 1, 1, 1, 1]
+        attempts = attempts_by_stage[args.stage]
 
-    # initialization_times = {'base': ['from_coco'], 'adaption': ['from_coco', 'from_base']}
-    initialization_times = {'base': ['from_coco'], 'adaption': ['from_coco']} # TODO
-    for initialization in initialization_times[args.phase]:
-        for experiment_id in range(attempts):
-            hparams['version_name'] = '{}_{}_{}_{}_{}_{}'.format(
-                args.dataset_name, args.phase, args.stage, initialization, experiment_id,
-                hparams['experiment_name'])
+        best_base_checkpoint_filename = './checkpoints/best_base_checkpoint.pth'
 
-            model = STAC(argparse.Namespace(**hparams))
-            model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
-                               external_val_file_path, external_val_label_root, label_root)
+        # initialization_times = {'base': ['from_coco'], 'adaption': ['from_coco', 'from_base']}
+        initialization_times = {'base': ['from_coco'], 'adaption': ['from_coco']} # TODO
+        for initialization in initialization_times[args.phase]:
+            for experiment_id in range(attempts):
+                hparams['version_name'] = '{}_{}_{}_{}_{}_{}'.format(
+                    args.dataset_name, args.phase, args.stage, initialization, experiment_id,
+                    hparams['experiment_name'])
 
-            if initialization == 'from_base':
-                if os.path.exists(best_base_checkpoint_filename):
-                    print("Loading from best_base_checkpoint")
-                    model.load_checkpoint(best_base_checkpoint_filename)
-                else:
-                    print("best_base_checkpoint does not exist. Skipping")
-                    continue
-            cur_teacher_loss, cur_student_loss = model.fit_model()
-            cur_val_loss = min(cur_teacher_loss, cur_student_loss)
-            best_teacher_loss = min(best_teacher_loss, cur_teacher_loss)
-            best_student_loss = min(best_student_loss, cur_student_loss)
-            if cur_val_loss < best_val_loss:
-                best_val_loss = cur_val_loss
-                best_version_name = hparams['version_name']
-            loss_dict['val_loss_for_run_{}'.format(experiment_id)] = cur_val_loss
-            if args.phase == 'base' and args.stage == 7:
-                if cur_val_loss < base_checkpoint_val_loss:
-                    base_checkpoint_val_loss = cur_val_loss
-                    print("Saving to best_base_checkpoint")
-                    # model.save_checkpoint(best_base_checkpoint_filename) # TODO
+                model = STAC(argparse.Namespace(**hparams))
+                model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
+                                   external_val_file_path, external_val_label_root, label_root)
 
-    print(json.dumps(loss_dict, indent=True))
-    print('I chose {} with loss={}'.format(best_version_name, best_val_loss))
+                if initialization == 'from_base':
+                    if os.path.exists(best_base_checkpoint_filename):
+                        print("Loading from best_base_checkpoint")
+                        model.load_checkpoint(best_base_checkpoint_filename)
+                    else:
+                        print("best_base_checkpoint does not exist. Skipping")
+                        continue
+                cur_teacher_loss, cur_student_loss = model.fit_model()
+                cur_val_loss = min(cur_teacher_loss, cur_student_loss)
+                best_teacher_loss = min(best_teacher_loss, cur_teacher_loss)
+                best_student_loss = min(best_student_loss, cur_student_loss)
+                if cur_val_loss < best_val_loss:
+                    best_val_loss = cur_val_loss
+                    best_version_name = hparams['version_name']
+                loss_dict['val_loss_for_run_{}'.format(experiment_id)] = cur_val_loss
+                if args.phase == 'base' and args.stage == 7:
+                    if cur_val_loss < base_checkpoint_val_loss:
+                        base_checkpoint_val_loss = cur_val_loss
+                        print("Saving to best_base_checkpoint")
+                        # model.save_checkpoint(best_base_checkpoint_filename) # TODO
 
-    hparams['version_name'] = best_version_name
+        print(json.dumps(loss_dict, indent=True))
+        print('I chose {} with loss={}'.format(best_version_name, best_val_loss))
 
-    # TODO: force one GPU!
+        hparams['version_name'] = best_version_name
+    else:
+        hparams['version_name'] = '{}_{}_{}_{}_{}_{}'.format(
+            args.dataset_name, args.phase, args.stage, 'from_coco', 0,
+            hparams['experiment_name'])
+
     best_model = STAC(argparse.Namespace(**hparams))
     best_model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
                             external_val_file_path, external_val_label_root, label_root)
-    eps = 1e-10
-    best_model.set_test_with_student(False)
+    # eps = 1e-10
+    best_model.set_test_with_student(False if args.stage==7 else True)
     # if args.stage == 7: #best_student_loss - eps > best_teacher_loss or
     #     best_model.set_test_with_student(False)
     best_model.test_from_best_checkpoint()
+    if os.path.exists(args.output_csv):
+        new_name = args.output_csv + '.tmp'
+        print("{} already exists. Moving it to {}".format(args.output_csv, new_name))
+        if os.path.exists(new_name):
+            print("Removing old {}".format(new_name))
+            os.remove(new_name)
+        shutil.move(args.output_csv, new_name)
+    print("Copying {} to {}".format(best_model.output_csv, args.output_csv))
     shutil.copy(best_model.output_csv, args.output_csv)
 

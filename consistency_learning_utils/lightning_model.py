@@ -296,11 +296,11 @@ class STAC(pl.LightningModule):
 
         self.teacher.load_state_dict(new_teacher_dict)
 
-        key = 'roi_heads.box_head.fc6.weight'
-        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
-            f.write("After EMA: GR={} key={} max value={}\n".format(
-                self.global_rank, key, self.teacher.state_dict()[key].max()
-            ))
+        # key = 'roi_heads.box_head.fc6.weight'
+        # with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+        #     f.write("After EMA: GR={} key={} max value={}\n".format(
+        #         self.global_rank, key, self.teacher.state_dict()[key].max()
+        #     ))
 
     def set_datasets(self, labeled_file_path, unlabeled_file_path, testing_file_path,
                      external_val_file_path, external_val_label_root, label_root):
@@ -799,6 +799,7 @@ class STAC(pl.LightningModule):
         return {'test_acc': 0}
 
     def on_test_end(self):
+        self.csvwriter_file.close()
         return {'test_acc': 0.5}
 
     def compute_accuracy(self, y, y_hat):
@@ -896,8 +897,8 @@ class STAC(pl.LightningModule):
 
     def test(self):
         headers = ['id', 'confidence', 'class', 'bbox']
-        f = open(self.output_csv, 'w', newline='')
-        self.csvwriter = csv.writer(f)
+        self.csvwriter_file = open(self.output_csv, 'w', newline='')
+        self.csvwriter = csv.writer(self.csvwriter_file)
         self.csvwriter.writerow(headers)
 
         if self.testWithStudent:
