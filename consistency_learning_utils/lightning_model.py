@@ -830,10 +830,11 @@ class STAC(pl.LightningModule):
                 curLR = lr
             else:
                 curLR = lr / drop_rate
+        elif lr_schedule == 'cyclic':
+            curLR = self.scheduler.get_last_lr()[0]
+
         else:
             raise NotImplementedError
-
-        curLR = self.scheduler.get_last_lr()[0]
         self.logger.experiment.track(curLR, name='lr', model=self.onTeacher, stage=self.stage)
 
         for pg in optimizer.param_groups:
@@ -849,9 +850,11 @@ class STAC(pl.LightningModule):
         optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=self.momentum,
                               weight_decay=self.weight_decay, nesterov=False)
 
-        self.scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=self.lr, step_size_up=500)
+        if self.hparams['lr_schedule'] == 'cyclic':
+            self.scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0, max_lr=self.lr, step_size_up=500)
+            return {'optimizer': optimizer, 'lr_scheduler': self.scheduler}
 
-        return {'optimizer': optimizer, 'lr_scheduler': self.scheduler}
+        return {'optimizer': optimizer}
 
     def fit_model(self):
         if self.hparams['teacher_init_path']:
