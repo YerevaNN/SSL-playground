@@ -18,7 +18,9 @@ parser.add_argument('--teacher_init_path', type=str, default=None)
 parser.add_argument('--experiment_name', type=str, default=None)
 parser.add_argument('--seed', type=int, default=None)
 parser.add_argument('--learning_rate', type=float, default=None)
+parser.add_argument('--lr_schedule', type=str, default=None)
 parser.add_argument('--student_learning_rate', type=float, default=None)
+parser.add_argument('--student_lr_schedule', type=str, default=None)
 parser.add_argument('--student_warmup_steps', type=int, default=None)
 parser.add_argument('--gradient_clip_threshold', type=float, default=None)
 parser.add_argument('--confidence_threshold', type=float, default=None)
@@ -75,6 +77,7 @@ if __name__ == "__main__":
     argsdict = vars(args)
 
     for key in ['experiment_name', 'seed', 'learning_rate', 'student_learning_rate', 'student_warmup_steps',
+                'lr_schedule', 'student_lr_schedule',
                 'gradient_clip_threshold', 'confidence_threshold', 'thresholding_method',
                 'weight_decay', 'EMA_keep_rate', 'gamma',
                 'initialization', 'reuse_classifier', 'check_val_steps', 'batch_size',
