@@ -844,7 +844,8 @@ class STAC(pl.LightningModule):
 
         # update params
         optimizer.step(closure=optimizer_closure)
-        self.scheduler.step()
+        if lr_schedule =='cyclic':
+            self.scheduler.step()
 
     def configure_optimizers(self):
         optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=self.momentum,
