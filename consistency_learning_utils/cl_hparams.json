@@ -14,7 +14,7 @@
     "lr_drop_rate": 10,
     "warmup_steps": 1000,
     "lr_drop_steps": 30000,
-    "lr_schedule": "warmupWithDrop",
+    "lr_schedule": "cyclic",
     "momentum": 0.9,
     "weight_decay": 0,
 
@@ -22,7 +22,7 @@
     "student_lr_drop_rate": 10,
     "student_warmup_steps": 1000,
     "student_lr_drop_steps": 4000,
-    "student_lr_schedule": "warmupWithDrop",
+    "student_lr_schedule": "cyclic",
 
     "augmentation": 2,
     "confidence_threshold": 0.8,
