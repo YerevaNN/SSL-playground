@@ -51,6 +51,7 @@ flags.DEFINE_integer('full_batch_size', 200, 'Full Batch Size')
 flags.DEFINE_integer('label_batch_size', 64, 'labeled batch size')
 flags.DEFINE_string('alg', 'A', 'Which algorithm to use')
 flags.DEFINE_string('read_outputs_from', None, 'If set, will read the outputs instead of training new models.')
+flags.DEFINE_string('skip_base_upto', None, 'If set, will skip base stages up to (including) specified stage.')
 
 # Can add more flags (e.g. objective function).
 FLAGS = flags.FLAGS
