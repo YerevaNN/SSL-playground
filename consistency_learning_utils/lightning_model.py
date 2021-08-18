@@ -295,6 +295,8 @@ class STAC(pl.LightningModule):
                 raise Exception("{} is not found in student model".format(key))
 
         self.teacher.load_state_dict(new_teacher_dict)
+        if (self.student_trainer.global_step - 1) == self.hparams['total_steps_student']:
+            torch.save(self.teacher.state_dict(), self.save_dir_name_teacher + '/last_teacher.ckpt')
 
         # key = 'roi_heads.box_head.fc6.weight'
         # with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
