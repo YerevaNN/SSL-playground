@@ -59,8 +59,8 @@ def main(_):
             testing_image_metadata.update({file:image.size})
 
         budget_stages = task['session']['Session_Status']['current_label_budget_stages']
-        current_task_dir = os.path.join('./session_data', task['session_token'])
-        current_task_dir = os.path.join(current_task_dir, "{}".format(phase))
+        current_task_dir_before_phase = os.path.join('./session_data', task['session_token'])
+        current_task_dir = os.path.join(current_task_dir_before_phase, phase)
 
         label_dir = os.path.join(current_task_dir, 'labels')
         model_dir = os.path.join(current_task_dir, 'models')
@@ -202,7 +202,7 @@ def main(_):
             checkpoint_path = None
             init_from_base_arg = ''
             if phase == 'adaption':  # all stages should start from base!
-                checkpoint_root_path = os.path.join(FLAGS.read_outputs_from, 'base')
+                checkpoint_root_path = os.path.join(current_task_dir_before_phase, 'base')
                 pattern = "last.ckpt"
                 for path, subdirs, files in os.walk(checkpoint_root_path):
                     for name in files:
