@@ -199,7 +199,9 @@ def main(_):
                 json.dump(class_id_to_name, f)
 
             # '--total_steps_teacher_initial 10 --total_steps_student_initial 10 ' \
-            if (phase == 'adaption' and stage == 0):
+            checkpoint_path = None
+            init_from_base_arg = ''
+            if phase == 'adaption':  # all stages should start from base!
                 checkpoint_root_path = os.path.join(FLAGS.read_outputs_from, 'base')
                 pattern = "last.ckpt"
                 for path, subdirs, files in os.walk(checkpoint_root_path):
@@ -207,16 +209,14 @@ def main(_):
                         if fnmatch(name, pattern):
                             if ("base_7" in os.path.join(path, name)) and ("student" in os.path.join(path, name)):
                                 checkpoint_path = os.path.join(path, name)
-                cmd = 'python run_one_checkpoint.py --output_csv {} --session_id {} --dataset_name {} ' \
-                      '--phase {} --stage {} --class_num {} --teacher_init_path {} --experiment_name {} '.format(
-                    output_csv, task['session_token'], task['session']['Session_Status']['current_dataset']['name'],
-                    phase,
-                    stage, len(class_id_to_name.keys()), checkpoint_path, 'pipeline_{}'.format(task['session_token']))
-            else:
-                cmd = 'python run_one_checkpoint.py --output_csv {} --session_id {} --dataset_name {} ' \
-                  '--phase {} --stage {} --class_num {} --experiment_name {} '.format(
+
+                if checkpoint_path is not None:
+                    init_from_base_arg = ' --teacher_init_path {} '.format(checkpoint_path)
+
+            cmd = 'python run_one_checkpoint.py --output_csv {} --session_id {} --dataset_name {} ' \
+                  '--phase {} --stage {} --class_num {} --experiment_name {} {}'.format(
                 output_csv, task['session_token'], task['session']['Session_Status']['current_dataset']['name'], phase,
-                stage, len(class_id_to_name.keys()), 'pipeline_{}'.format(task['session_token']))
+                stage, len(class_id_to_name.keys()), 'pipeline_{}'.format(task['session_token']), init_from_base_arg)
             if True and (FLAGS.read_outputs_from is None):
                 print("Starting: {}".format(cmd))
                 os.system(cmd)
