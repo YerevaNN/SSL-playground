@@ -298,7 +298,7 @@ class STAC(pl.LightningModule):
         print("student global step", self.student_trainer.global_step - 1, self.hparams['total_steps_student'])
         if self.student_trainer.global_step == (self.hparams['total_steps_student'] - 1):
             print("last step")
-            torch.save(self.teacher.state_dict(), self.save_dir_name_teacher + '/last_teacher.ckpt')
+            torch.save(new_teacher_dict, self.save_dir_name_teacher + '/last_teacher.ckpt')
 
         # key = 'roi_heads.box_head.fc6.weight'
         # with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
