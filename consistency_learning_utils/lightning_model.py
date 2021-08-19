@@ -154,6 +154,7 @@ class STAC(pl.LightningModule):
         self.weight_decay = self.hparams['weight_decay']
         self.consistency_criterion = self.hparams['consistency_criterion']
         self.testWithStudent = True
+        self.onlyBurnIn = False
         self.no_val = False
 
         bs = self.hparams['batch_size']
@@ -220,8 +221,9 @@ class STAC(pl.LightningModule):
         self.validation_images = 0
 
 
-    def set_test_with_student(self, val):
-        self.testWithStudent = val
+    def set_test_with_student(self, val1, val2):
+        self.testWithStudent = val1
+        self.onlyBurnIn = val2
 
     def save_checkpoint(self, path):
         torch.save(self.student.state_dict(), path)
@@ -260,19 +262,19 @@ class STAC(pl.LightningModule):
 
     def test_from_checkpoint(self, checkpoint_path):
         print('Testing with this checkpoint: {}'.format(checkpoint_path))
-        # if self.testWithStudent:
-        #     self.load_checkpoint_student(checkpoint_path)
-        # else:
-        #     self.load_checkpoint_teacher(checkpoint_path)
+        if self.testWithStudent:
+            self.load_checkpoint_student(checkpoint_path)
+        else:
+            self.load_checkpoint_teacher(checkpoint_path)
         self.load_checkpoint_teacher(checkpoint_path)
 
         self.test()
 
     def test_from_best_checkpoint(self):
-        if self.testWithStudent:
-            ckpt_path = self.save_dir_name_student
-        else:
+        if self.onlyBurnIn:
             ckpt_path = self.save_dir_name_teacher
+        else:
+            ckpt_path = self.save_dir_name_student
         
         checkpoint_name = ''
         for ckpt_name in os.listdir(ckpt_path):
@@ -374,6 +376,18 @@ class STAC(pl.LightningModule):
         self.student_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
             accelerator='ddp',
+            callbacks=[checkpoint_callback],
+            logger=self.aim_logger,
+            num_sanity_val_steps=0,
+            log_every_n_steps=10, progress_bar_refresh_rate=1,
+            gradient_clip_val=self.hparams['gradient_clip_threshold'],
+            min_steps=self.hparams['total_steps_student'],
+            max_steps=self.hparams['total_steps_student'],
+            check_val_every_n_epoch=self.check_val_epochs,
+            deterministic=True
+        )
+        self.student_test_trainer = Trainer(
+            gpus=1, checkpoint_callback=True,  # what is this?
             callbacks=[checkpoint_callback],
             logger=self.aim_logger,
             num_sanity_val_steps=0,
@@ -782,11 +796,10 @@ class STAC(pl.LightningModule):
             name = image_path.split('/')[-1]
             name = name[:-4]
             names.append(name)
-        # if self.testWithStudent:
-        #     y_hat = self.student_forward(x, image_paths)
-        # else:
-        #     y_hat = self.teacher_forward(x, image_paths)
-        y_hat = self.teacher_forward(x, image_paths)
+        if self.testWithStudent:
+            y_hat = self.student_forward(x, image_paths)
+        else:
+            y_hat = self.teacher_forward(x, image_paths)
 
         rows = []
         for i in range(len(x)):
@@ -908,13 +921,12 @@ class STAC(pl.LightningModule):
         self.csvwriter = csv.writer(self.csvwriter_file)
         self.csvwriter.writerow(headers)
 
-        # if self.testWithStudent:
-        #      print('testing with student')
-        #      self.student_trainer.test(model=self)
-        #  else:
-        #      print('testing with teacher')
-        #      self.teacher_test_trainer.test(model=self)
-        self.teacher_test_trainer.test(model=self)
+        if self.testWithStudent:
+            print('testing with student')
+            self.student_test_trainer.test(model=self)
+        else:
+            print('testing with teacher')
+            self.teacher_test_trainer.test(model=self)
 
 
     def load(self):
