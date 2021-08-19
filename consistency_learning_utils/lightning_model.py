@@ -264,7 +264,7 @@ class STAC(pl.LightningModule):
         #     self.load_checkpoint_student(checkpoint_path)
         # else:
         #     self.load_checkpoint_teacher(checkpoint_path)
-        self.load_from_teacher(checkpoint_path)
+        self.load_checkpoint_teacher(checkpoint_path)
         self.test()
 
     def test_from_best_checkpoint(self):
