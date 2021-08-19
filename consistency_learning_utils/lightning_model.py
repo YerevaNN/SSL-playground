@@ -260,10 +260,11 @@ class STAC(pl.LightningModule):
 
     def test_from_checkpoint(self, checkpoint_path):
         print('Testing with this checkpoint: {}'.format(checkpoint_path))
-        if self.testWithStudent:
-            self.load_checkpoint_student(checkpoint_path)
-        else:
-            self.load_checkpoint_teacher(checkpoint_path)
+        # if self.testWithStudent:
+        #     self.load_checkpoint_student(checkpoint_path)
+        # else:
+        #     self.load_checkpoint_teacher(checkpoint_path)
+        self.load_from_checkpoint(checkpoint_path)
         self.test()
 
     def test_from_best_checkpoint(self):
@@ -295,11 +296,6 @@ class STAC(pl.LightningModule):
                 raise Exception("{} is not found in student model".format(key))
 
         self.teacher.load_state_dict(new_teacher_dict)
-        print("student global step", self.student_trainer.global_step - 1, self.hparams['total_steps_student'])
-        if self.student_trainer.global_step == (self.hparams['total_steps_student'] - 1):
-            print("last step")
-            torch.save(new_teacher_dict, self.save_dir_name_teacher + '/last_teacher.ckpt')
-
         # key = 'roi_heads.box_head.fc6.weight'
         # with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
         #     f.write("After EMA: GR={} key={} max value={}\n".format(
