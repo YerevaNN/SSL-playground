@@ -264,7 +264,7 @@ class STAC(pl.LightningModule):
         #     self.load_checkpoint_student(checkpoint_path)
         # else:
         #     self.load_checkpoint_teacher(checkpoint_path)
-        self.load_from_checkpoint(checkpoint_path)
+        self.load_from_teacher(checkpoint_path)
         self.test()
 
     def test_from_best_checkpoint(self):
@@ -905,12 +905,12 @@ class STAC(pl.LightningModule):
         self.csvwriter = csv.writer(self.csvwriter_file)
         self.csvwriter.writerow(headers)
 
-        if self.testWithStudent:
-            print('testing with student')
-            self.student_trainer.test(model=self)
-        else:
-            print('testing with teacher')
-            self.teacher_test_trainer.test(model=self)
+        # if self.testWithStudent:
+        #     print('testing with student')
+        #     self.student_trainer.test(model=self)
+        # else:
+        #     print('testing with teacher')
+        self.teacher_test_trainer.test(model=self)
 
     def load(self):
         self.load_from_checkpoint(self.save_dir_name_student)
