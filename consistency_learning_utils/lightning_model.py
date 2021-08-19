@@ -295,6 +295,7 @@ class STAC(pl.LightningModule):
                 raise Exception("{} is not found in student model".format(key))
 
         self.teacher.load_state_dict(new_teacher_dict)
+        print("student global step", self.student_trainer.global_step, self.hparams['total_steps_student'])
         if (self.student_trainer.global_step - 1) == self.hparams['total_steps_student']:
             torch.save(self.teacher.state_dict(), self.save_dir_name_teacher + '/last_teacher.ckpt')
 
