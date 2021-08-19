@@ -265,6 +265,7 @@ class STAC(pl.LightningModule):
         # else:
         #     self.load_checkpoint_teacher(checkpoint_path)
         self.load_checkpoint_teacher(checkpoint_path)
+
         self.test()
 
     def test_from_best_checkpoint(self):
@@ -781,10 +782,12 @@ class STAC(pl.LightningModule):
             name = image_path.split('/')[-1]
             name = name[:-4]
             names.append(name)
-        if self.testWithStudent:
-            y_hat = self.student_forward(x, image_paths)
-        else:
-            y_hat = self.teacher_forward(x, image_paths)
+        # if self.testWithStudent:
+        #     y_hat = self.student_forward(x, image_paths)
+        # else:
+        #     y_hat = self.teacher_forward(x, image_paths)
+        y_hat = self.teacher_forward(x, image_paths)
+
         rows = []
         for i in range(len(x)):
             img_id = names[i]  # we should keep image ID somehow in the batch!
@@ -906,11 +909,13 @@ class STAC(pl.LightningModule):
         self.csvwriter.writerow(headers)
 
         # if self.testWithStudent:
-        #     print('testing with student')
-        #     self.student_trainer.test(model=self)
-        # else:
-        #     print('testing with teacher')
+        #      print('testing with student')
+        #      self.student_trainer.test(model=self)
+        #  else:
+        #      print('testing with teacher')
+        #      self.teacher_test_trainer.test(model=self)
         self.teacher_test_trainer.test(model=self)
+
 
     def load(self):
         self.load_from_checkpoint(self.save_dir_name_student)
