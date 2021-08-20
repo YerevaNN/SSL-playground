@@ -211,7 +211,7 @@ def main(_):
                                 checkpoint_path = os.path.join(path, name)
 
                 if checkpoint_path is not None:
-                    init_from_base_arg = ' --teacher_init_path {} '.format(checkpoint_path)
+                    init_from_base_arg = ' --teacher_init_path {} --teacher_init_skip_last_layer '.format(checkpoint_path)
 
             cmd = 'python run_one_checkpoint.py --output_csv {} --session_id {} --dataset_name {} ' \
                   '--phase {} --stage {} --class_num {} --experiment_name {} {}'.format(
