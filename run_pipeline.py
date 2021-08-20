@@ -207,7 +207,7 @@ def main(_):
                 for path, subdirs, files in os.walk(checkpoint_root_path):
                     for name in files:
                         if fnmatch(name, pattern):
-                            if ("base_7" in os.path.join(path, name)) and ("student" in os.path.join(path, name)):
+                            if ("base_7" in os.path.join(path, name)) and ("teacher" in os.path.join(path, name)):
                                 checkpoint_path = os.path.join(path, name)
 
                 if checkpoint_path is not None:
