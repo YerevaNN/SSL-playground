@@ -228,7 +228,7 @@ class STAC(pl.LightningModule):
     def save_checkpoint(self, path):
         torch.save(self.student.state_dict(), path)
 
-    def load_checkpoint(self, path):
+    def load_from_checkpoint_without_last_layers(self, path):
         pretrained_dict = torch.load(path)
         model_dict = self.student.state_dict()
         pretrained_dict = {k: v for k, v in pretrained_dict.items() if 'cls_score' not in k and 'bbox_pred' not in k}
@@ -262,11 +262,7 @@ class STAC(pl.LightningModule):
 
     def test_from_checkpoint(self, checkpoint_path):
         print('Testing with this checkpoint: {}'.format(checkpoint_path))
-        if self.testWithStudent and not self.onlyBurnIn:
-            self.load_checkpoint_student(checkpoint_path)
-        else:
-            self.load_checkpoint_teacher(checkpoint_path)
-        self.load_checkpoint_teacher(checkpoint_path)
+        self.load_from_checkpoint(checkpoint_path)
 
         self.test()
 
@@ -875,14 +871,10 @@ class STAC(pl.LightningModule):
 
     def fit_model(self):
         if self.hparams['teacher_init_path']:
-            if self.hparams['skip_burn_in']:
-                print("Loading teacher model from: {}".format(self.hparams['teacher_init_path']))
-                self.load_checkpoint_teacher(self.hparams['teacher_init_path'])
-            else:
-                print("Loading teacher model from: {} and fit".format(self.hparams['teacher_init_path']))
-                self.load_checkpoint_teacher(self.hparams['teacher_init_path'])
-                self.teacher_trainer.fit(self)
-        else:
+            print("Loading teacher model from: {}".format(self.hparams['teacher_init_path']))
+            self.load_checkpoint_teacher(self.hparams['teacher_init_path'])
+
+        if not self.hparams['skip_burn_in']:
             print("Starting teacher")
             self.onTeacher = True
             print("Will train for {} epochs, validate every {} epochs".format(
@@ -929,6 +921,3 @@ class STAC(pl.LightningModule):
             self.teacher_test_trainer.test(model=self)
 
 
-    def load(self):
-        self.load_from_checkpoint(self.save_dir_name_student)
-        self.eval()

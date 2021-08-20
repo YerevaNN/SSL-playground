@@ -142,7 +142,7 @@ if __name__ == "__main__":
                 if initialization == 'from_base':
                     if os.path.exists(best_base_checkpoint_filename):
                         print("Loading from best_base_checkpoint")
-                        model.load_checkpoint(best_base_checkpoint_filename)
+                        model.load_checkpoint_without_last_layers(best_base_checkpoint_filename)
                     else:
                         print("best_base_checkpoint does not exist. Skipping")
                         continue
