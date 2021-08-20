@@ -250,14 +250,16 @@ class STAC(pl.LightningModule):
         actual_dict = self.teacher.state_dict()
         self.student.load_state_dict(actual_dict)
 
-    def load_checkpoint_teacher(self, checkpoint_path):
+    def load_checkpoint_teacher(self, checkpoint_path, skip_last_layer=False):
         checkpoint = torch.load(checkpoint_path)
-        actual_dict = {k[8:]: v for k, v in checkpoint['state_dict'].items() if k.startswith('teacher')}
+        actual_dict = {k[8:]: v for k, v in checkpoint['state_dict'].items() if k.startswith('teacher')
+                       and (('cls_score' not in k and 'bbox_pred' not in k) if skip_last_layer else True)}
         self.teacher.load_state_dict(actual_dict)
 
-    def load_checkpoint_student(self, checkpoint_path):
+    def load_checkpoint_student(self, checkpoint_path, skip_last_layer=False):
         checkpoint = torch.load(checkpoint_path)
-        actual_dict = {k[8:]: v for k, v in checkpoint['state_dict'].items() if k.startswith('student')}
+        actual_dict = {k[8:]: v for k, v in checkpoint['state_dict'].items() if k.startswith('student')
+                       and (('cls_score' not in k and 'bbox_pred' not in k) if skip_last_layer else True)}
         self.student.load_state_dict(actual_dict)
 
     def test_from_checkpoint(self, checkpoint_path):
@@ -872,7 +874,7 @@ class STAC(pl.LightningModule):
     def fit_model(self):
         if self.hparams['teacher_init_path']:
             print("Loading teacher model from: {}".format(self.hparams['teacher_init_path']))
-            self.load_checkpoint_teacher(self.hparams['teacher_init_path'])
+            self.load_checkpoint_teacher(self.hparams['teacher_init_path'], self.hparams['teacher_init_skip_last_layer'])
 
         if not self.hparams['skip_burn_in']:
             print("Starting teacher")
