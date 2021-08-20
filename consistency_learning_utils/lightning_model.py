@@ -153,7 +153,7 @@ class STAC(pl.LightningModule):
         self.momentum = self.hparams['momentum']
         self.weight_decay = self.hparams['weight_decay']
         self.consistency_criterion = self.hparams['consistency_criterion']
-        self.testWithStudent = True
+        self.testWithStudent = False
         self.onlyBurnIn = False
         self.no_val = False
 
@@ -262,7 +262,7 @@ class STAC(pl.LightningModule):
 
     def test_from_checkpoint(self, checkpoint_path):
         print('Testing with this checkpoint: {}'.format(checkpoint_path))
-        if self.testWithStudent:
+        if self.testWithStudent and not self.onlyBurnIn:
             self.load_checkpoint_student(checkpoint_path)
         else:
             self.load_checkpoint_teacher(checkpoint_path)
@@ -796,7 +796,7 @@ class STAC(pl.LightningModule):
             name = image_path.split('/')[-1]
             name = name[:-4]
             names.append(name)
-        if self.testWithStudent:
+        if self.testWithStudent and not self.onlyBurnIn:
             y_hat = self.student_forward(x, image_paths)
         else:
             y_hat = self.teacher_forward(x, image_paths)
@@ -921,7 +921,7 @@ class STAC(pl.LightningModule):
         self.csvwriter = csv.writer(self.csvwriter_file)
         self.csvwriter.writerow(headers)
 
-        if self.testWithStudent:
+        if self.testWithStudent and not self.onlyBurnIn:
             print('testing with student')
             self.student_test_trainer.test(model=self)
         else:

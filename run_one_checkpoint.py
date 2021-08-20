@@ -38,6 +38,8 @@ parser.add_argument('--total_steps_teacher_initial', type=int, default=None)
 parser.add_argument('--total_steps_student_initial', type=int, default=None)
 parser.add_argument('--skip_burn_in', action='store_true')  # if true, student will start immediately
 parser.add_argument('--inference_only', action='store_true')  # do not train. attempt to test with the checkpoint
+parser.add_argument('--test_with_student', action='store_true')  # do not train. attempt to test with the checkpoint
+
 
 
 args = parser.parse_args()
@@ -171,7 +173,7 @@ if __name__ == "__main__":
     best_model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
                             external_val_file_path, external_val_label_root, label_root)
     # eps = 1e-10
-    best_model.set_test_with_student(False, True if args.stage==7 else False)
+    best_model.set_test_with_student(args.test_with_student, True if args.stage==7 else False)
     # if args.stage == 7: #best_student_loss - eps > best_teacher_loss or
     #     best_model.set_test_with_student(False)
     best_model.test_from_best_checkpoint()
