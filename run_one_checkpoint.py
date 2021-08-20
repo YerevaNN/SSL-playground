@@ -14,6 +14,8 @@ parser.add_argument('--stage', type=int, default=None)
 parser.add_argument('--class_num', type=int, default=None)
 parser.add_argument('--output_csv', type=str, default=None)
 parser.add_argument('--teacher_init_path', type=str, default=None)
+parser.add_argument('--teacher_init_skip_last_layer', action='store_true')
+parser.add_argument('--skip_burn_in', action='store_true')  # if true, student will start immediately
 
 parser.add_argument('--experiment_name', type=str, default=None)
 parser.add_argument('--seed', type=int, default=None)
@@ -36,10 +38,8 @@ parser.add_argument('--batch_size', type=int, default=None)
 parser.add_argument('--thresholding_method', type=str, default=None)
 parser.add_argument('--total_steps_teacher_initial', type=int, default=None)
 parser.add_argument('--total_steps_student_initial', type=int, default=None)
-parser.add_argument('--skip_burn_in', action='store_true')  # if true, student will start immediately
 parser.add_argument('--inference_only', action='store_true')  # do not train. attempt to test with the checkpoint
-parser.add_argument('--test_with_student', action='store_true')  # do not train. attempt to test with the checkpoint
-
+parser.add_argument('--test_with_student', action='store_true')
 
 
 args = parser.parse_args()
@@ -83,7 +83,7 @@ if __name__ == "__main__":
                 'gradient_clip_threshold', 'confidence_threshold', 'thresholding_method',
                 'weight_decay', 'EMA_keep_rate', 'gamma',
                 'initialization', 'reuse_classifier', 'check_val_steps', 'batch_size',
-                'box_score_thresh', 'augmentation', 'teacher_init_path',
+                'box_score_thresh', 'augmentation', 'teacher_init_path', 'teacher_init_skip_last_layer',
                 'total_steps_teacher_initial', 'total_steps_student_initial', 'skip_burn_in']:
         if key in argsdict and argsdict[key] is not None:
             print("Overriding {} to {}".format(key, argsdict[key]))

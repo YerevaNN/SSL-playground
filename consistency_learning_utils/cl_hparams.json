@@ -5,6 +5,7 @@
     "initialization": "full",
     "reuse_classifier": "add",
     "teacher_init_path": false,
+    "teacher_init_skip_last_layer": false,
 
     "total_steps_teacher_initial": 10000,
     "total_steps_student_initial": 1000,
