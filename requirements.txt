@@ -1,7 +1,7 @@
 requests
 numpy
 tqdm
-torch==1.7.1
+torch==1.8
 pytorch-lightning==1.2.8
 pillow
 pandas
