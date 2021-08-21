@@ -8,19 +8,19 @@ RUN apt-get update && apt-get install -y curl
 
 # Install python3.6 and pip
 RUN apt-get update && apt-get install -y \
-    python3.8 \
+    python3.7 \
     python3-pip \
     libsm6 \
     libxext6 \
     libxrender-dev \
     git \ 
-    python3.8-dev
+    python3.7-dev
 
 # Update pip
-RUN python3.8 -m pip install --upgrade pip
+RUN python3.7 -m pip install --upgrade pip
 
 #symlink for convenience
-RUN ln -s /usr/bin/python3.8 /usr/bin/python
+RUN ln -s /usr/bin/python3.7 /usr/bin/python
 
 #Install other libraries from requirements.txt
 COPY requirements.txt /tmp/
