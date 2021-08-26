@@ -24,7 +24,7 @@ RUN ln -s /usr/bin/python3.8 /usr/bin/python
 
 #Install other libraries from requirements.txt
 COPY requirements.txt /tmp/
-RUN cd /tmp/ && pip install -r requirements.txt
+RUN cd /tmp/ && pip install -r requirements.txt -f https://download.pytorch.org/whl/torch_stable.html
 
 WORKDIR /home/run_pipeline
 COPY ./ /home/run_pipeline/
