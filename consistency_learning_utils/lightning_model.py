@@ -158,10 +158,10 @@ class STAC(pl.LightningModule):
         self.no_val = False
 
         bs = self.hparams['batch_size']
-        available_gpus = os.getenv('CUDA_VISIBLE_DEVICES').split(',')
-        gpu_num = len(available_gpus)
+        self.available_gpus = os.getenv('CUDA_VISIBLE_DEVICES').split(',')
+        gpu_num = len(self.available_gpus)
 
-        print("GPUs count {}, GPU ids {}".format(gpu_num, available_gpus))
+        print("GPUs count {}, GPU ids {}".format(gpu_num, self.available_gpus))
         self.hparams['batches_per_epoch'] = max(1, int((self.hparams['labeled_num'] + bs - 1) / bs / max(1, gpu_num)))
         self.batches_per_epoch = self.hparams['batches_per_epoch']
         self.check_val_epochs = max(
@@ -173,18 +173,26 @@ class STAC(pl.LightningModule):
         self.save_dir_name_teacher = os.path.join(version_folder, 'teacher{}'.format(self.global_rank))
         self.save_dir_name_student = os.path.join(version_folder, 'student')
         self.output_csv = os.path.join(version_folder, 'output{}.csv'.format(self.global_rank))
-        gpu_num = torch.cuda.device_count()
         print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
             self.hparams['initialization'], self.hparams['reuse_classifier']
         ))
         self.teacher_init = 'full' if (self.hparams['teacher_init_path'] and (not self.hparams['skip_burn_in'])) else \
             self.hparams['initialization']
-        self.teacher = model_changed_classifier(
-            initialize=self.teacher_init,
-            reuse_classifier=self.hparams['reuse_classifier'],
-            class_num=self.hparams['class_num'],
-            gamma=self.hparams['gamma'],
-            box_score_thresh=self.hparams['box_score_thresh'])
+        for gpu in range(self.available_gpus):
+            setattr(self, 'teacher{}'.format(self.availabe_gpus[gpu]),
+                    model_changed_classifier(
+                        initialize=self.teacher_init,
+                        reuse_classifier=self.hparams['reuse_classifier'],
+                        class_num=self.hparams['class_num'],
+                        gamma=self.hparams['gamma'],
+                        box_score_thresh=self.hparams['box_score_thresh'])
+                    )
+            # self.teacher = model_changed_classifier(
+            #     initialize=self.teacher_init,
+            #     reuse_classifier=self.hparams['reuse_classifier'],
+            #     class_num=self.hparams['class_num'],
+            #     gamma=self.hparams['gamma'],
+            #     box_score_thresh=self.hparams['box_score_thresh'])
 
         self.student = model_changed_classifier(
             initialize=self.hparams['initialization'],
