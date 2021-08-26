@@ -178,7 +178,7 @@ class STAC(pl.LightningModule):
         ))
         self.teacher_init = 'full' if (self.hparams['teacher_init_path'] and (not self.hparams['skip_burn_in'])) else \
             self.hparams['initialization']
-        for gpu in range(self.available_gpus):
+        for gpu in range(len(self.available_gpus)):
             setattr(self, 'teacher{}'.format(self.availabe_gpus[gpu]),
                     model_changed_classifier(
                         initialize=self.teacher_init,
