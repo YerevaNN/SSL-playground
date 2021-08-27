@@ -170,29 +170,21 @@ class STAC(pl.LightningModule):
         self.onTeacher = True  # as opposed to "on student"
 
         version_folder = os.path.join(self.hparams['phase_folder'], self.hparams['version_name'])
-        self.save_dir_name_teacher = os.path.join(version_folder, 'teacher{}'.format(self.global_rank))
+        self.save_dir_name_teacher = os.path.join(version_folder, 'teacher')
         self.save_dir_name_student = os.path.join(version_folder, 'student')
-        self.output_csv = os.path.join(version_folder, 'output{}.csv'.format(self.global_rank))
+        self.output_csv = os.path.join(version_folder, 'output.csv')
         print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
             self.hparams['initialization'], self.hparams['reuse_classifier']
         ))
         self.teacher_init = 'full' if (self.hparams['teacher_init_path'] and (not self.hparams['skip_burn_in'])) else \
             self.hparams['initialization']
-        for gpu in range(len(self.available_gpus)):
-            setattr(self, 'teacher{}'.format(self.available_gpus[gpu]),
-                    model_changed_classifier(
-                        initialize=self.teacher_init,
-                        reuse_classifier=self.hparams['reuse_classifier'],
-                        class_num=self.hparams['class_num'],
-                        gamma=self.hparams['gamma'],
-                        box_score_thresh=self.hparams['box_score_thresh'])
-                    )
-            # self.teacher = model_changed_classifier(
-            #     initialize=self.teacher_init,
-            #     reuse_classifier=self.hparams['reuse_classifier'],
-            #     class_num=self.hparams['class_num'],
-            #     gamma=self.hparams['gamma'],
-            #     box_score_thresh=self.hparams['box_score_thresh'])
+
+        self.teacher = model_changed_classifier(
+            initialize=self.teacher_init,
+            reuse_classifier=self.hparams['reuse_classifier'],
+            class_num=self.hparams['class_num'],
+            gamma=self.hparams['gamma'],
+            box_score_thresh=self.hparams['box_score_thresh'])
 
         self.student = model_changed_classifier(
             initialize=self.hparams['initialization'],
