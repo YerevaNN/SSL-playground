@@ -40,6 +40,7 @@ parser.add_argument('--total_steps_teacher_initial', type=int, default=None)
 parser.add_argument('--total_steps_student_initial', type=int, default=None)
 parser.add_argument('--inference_only', action='store_true')  # do not train. attempt to test with the checkpoint
 parser.add_argument('--test_with_student', action='store_true')
+parser.add_argument('--num_workers', type=int, default=None)
 
 
 args = parser.parse_args()
@@ -79,7 +80,7 @@ if __name__ == "__main__":
     argsdict = vars(args)
 
     for key in ['experiment_name', 'seed', 'learning_rate', 'student_learning_rate', 'student_warmup_steps',
-                'lr_schedule', 'student_lr_schedule',
+                'lr_schedule', 'student_lr_schedule', 'num_workers',
                 'gradient_clip_threshold', 'confidence_threshold', 'thresholding_method',
                 'weight_decay', 'EMA_keep_rate', 'gamma',
                 'initialization', 'reuse_classifier', 'check_val_steps', 'batch_size',
