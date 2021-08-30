@@ -270,7 +270,9 @@ class STAC(pl.LightningModule):
 
     def test_from_checkpoint(self, checkpoint_path):
         print('Testing with this checkpoint: {}'.format(checkpoint_path))
-        self.load_from_checkpoint(checkpoint_path)
+        # self.load_from_checkpoint(checkpoint_path) # this one returns a new model!!!
+        self.load_checkpoint_teacher(checkpoint_path)
+        self.load_checkpoint_student(checkpoint_path)
 
         self.test()
 
