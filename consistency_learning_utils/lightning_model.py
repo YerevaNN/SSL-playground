@@ -158,8 +158,13 @@ class STAC(pl.LightningModule):
         self.no_val = False
 
         bs = self.hparams['batch_size']
-        self.available_gpus = os.getenv('CUDA_VISIBLE_DEVICES').split(',')
-        gpu_num = len(self.available_gpus)
+        env = os.getenv('CUDA_VISIBLE_DEVICES')
+        if env is not None:
+            self.available_gpus = env.split(',')
+            gpu_num = len(self.available_gpus)
+        else:
+            self.available_gpus = '0'
+            gpu_num = 1
 
         print("GPUs count {}, GPU ids {}".format(gpu_num, self.available_gpus))
         self.hparams['batches_per_epoch'] = max(1, int((self.hparams['labeled_num'] + bs - 1) / bs / max(1, gpu_num)))
