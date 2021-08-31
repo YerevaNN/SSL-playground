@@ -170,7 +170,9 @@ class STAC(pl.LightningModule):
         self.onTeacher = True  # as opposed to "on student"
 
         version_folder = os.path.join(self.hparams['phase_folder'], self.hparams['version_name'])
-        self.save_dir_name_teacher = os.path.join(version_folder, 'teacher{}'.format(self.global_rank))
+        # self.save_dir_name_teacher = os.path.join(version_folder, 'teacher')
+        for gpu in range(len(self.available_gpus)):
+            setattr(self, 'save_dir_name{}'.format(self.available_gpus[gpu]), os.path.join(version_folder, 'teacher{}'.format(self.available_gpus[gpu])))
         self.save_dir_name_student = os.path.join(version_folder, 'student')
         self.output_csv = os.path.join(version_folder, 'output{}.csv'.format(self.global_rank))
         print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
@@ -207,8 +209,8 @@ class STAC(pl.LightningModule):
         self.aim_logger = AimLogger(
             experiment=self.hparams['version_name']
         )
-
-        self.make_teacher_trainer()
+        for gpu in range(len(self.available_gpus)):
+            self.make_teacher_trainer(self.available_gpus[gpu])
         self.make_student_trainer()
 
         with open("./train_logits.json", "w+") as jsonFile:
@@ -339,7 +341,7 @@ class STAC(pl.LightningModule):
             self.no_val = True
 
 
-    def make_teacher_trainer(self):
+    def make_teacher_trainer(self, gpu):
         self.t_checkpoint_callback = ModelCheckpoint(
             monitor=None,  # 'val_loss',
             dirpath=self.save_dir_name_teacher,
@@ -348,8 +350,8 @@ class STAC(pl.LightningModule):
             save_last=True,
             period=1
         )
-        self.teacher_trainer = Trainer(
-            gpus=-1, checkpoint_callback=True, # what is this?
+        setattr(self, 'teacher_trainer{}'.format(gpu), Trainer(
+            gpus=gpu, checkpoint_callback=True, # what is this?
             accelerator='ddp',
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
@@ -360,7 +362,20 @@ class STAC(pl.LightningModule):
             max_steps=self.hparams['total_steps_teacher'],
             check_val_every_n_epoch=self.check_val_epochs,
             deterministic=True,
-        )
+        ))
+        # self.teacher_trainer = Trainer(
+        #     gpus=-1, checkpoint_callback=True, # what is this?
+        #     accelerator='ddp',
+        #     callbacks=[self.t_checkpoint_callback],
+        #     num_sanity_val_steps=0,
+        #     logger=self.aim_logger,
+        #     log_every_n_steps=10, progress_bar_refresh_rate=1,
+        #     gradient_clip_val=self.hparams['gradient_clip_threshold'],
+        #     min_steps=self.hparams['total_steps_teacher'],
+        #     max_steps=self.hparams['total_steps_teacher'],
+        #     check_val_every_n_epoch=self.check_val_epochs,
+        #     deterministic=True,
+        # )
         self.teacher_test_trainer = Trainer(
             gpus=1, checkpoint_callback=True,  # what is this?
             callbacks=[self.t_checkpoint_callback],
@@ -899,6 +914,8 @@ class STAC(pl.LightningModule):
             ))
 
             self.validation_counter = 0
+            for gpu in range(self.available_gpus):
+                self.__getattribute__('teacher_trainer{}'.format(self.available_gpus[gpu])).fit(self)
             self.teacher_trainer.fit(self)
             print("Finished teacher")
 
