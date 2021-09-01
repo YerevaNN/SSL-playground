@@ -172,7 +172,7 @@ class STAC(pl.LightningModule):
         version_folder = os.path.join(self.hparams['phase_folder'], self.hparams['version_name'])
         # self.save_dir_name_teacher = os.path.join(version_folder, 'teacher')
         for gpu in range(len(self.available_gpus)):
-            setattr(self, 'save_dir_name{}'.format(self.available_gpus[gpu]), os.path.join(version_folder, 'teacher{}'.format(self.available_gpus[gpu])))
+            setattr(self, 'save_dir_name_teacher{}'.format(self.available_gpus[gpu]), os.path.join(version_folder, 'teacher{}'.format(self.available_gpus[gpu])))
         self.save_dir_name_student = os.path.join(version_folder, 'student')
         self.output_csv = os.path.join(version_folder, 'output{}.csv'.format(self.global_rank))
         print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
