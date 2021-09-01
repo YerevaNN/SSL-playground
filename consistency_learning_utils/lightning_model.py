@@ -249,11 +249,11 @@ class STAC(pl.LightningModule):
 
     def load_best_teacher(self):
         checkpoint_name = ''
-        for ckpt_name in os.listdir(self.save_dir_name_teacher):
+        for ckpt_name in os.listdir(self.save_dir_name_teacher0):
             if ckpt_name.endswith('ckpt'):
                 checkpoint_name = ckpt_name
                 break
-        checkpoint_path = os.path.join(self.save_dir_name_teacher, checkpoint_name)
+        checkpoint_path = os.path.join(self.save_dir_name_teacher0, checkpoint_name)
         best_dict = torch.load(checkpoint_path)
         actual_dict = {k[8:]: v for k, v in best_dict['state_dict'].items() if k.startswith('teacher')}
         self.teacher.load_state_dict(actual_dict)
@@ -286,7 +286,7 @@ class STAC(pl.LightningModule):
 
     def test_from_best_checkpoint(self):
         if self.onlyBurnIn:
-            ckpt_path = self.save_dir_name_teacher
+            ckpt_path = self.save_dir_name_teacher0
         else:
             ckpt_path = self.save_dir_name_student
         
@@ -344,7 +344,7 @@ class STAC(pl.LightningModule):
     def make_teacher_trainer(self, gpu):
         self.t_checkpoint_callback = ModelCheckpoint(
             monitor=None,  # 'val_loss',
-            dirpath=self.save_dir_name_teacher,
+            dirpath=self.save_dir_name_teacher0,
             filename='{epoch}',
             verbose=True,
             save_last=True,
@@ -809,7 +809,7 @@ class STAC(pl.LightningModule):
 
     def store_predictions(self):
         if self.onTeacher:
-            folder = self.save_dir_name_teacher
+            folder = self.save_dir_name_teacher0
         else:
             folder = self.save_dir_name_student
         filename = os.path.join(folder, "{}_{}.npy".format(self.global_step, self.global_rank))
