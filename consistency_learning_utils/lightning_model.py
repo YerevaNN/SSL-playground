@@ -265,7 +265,7 @@ class STAC(pl.LightningModule):
 
     def copy_student_from_current_teacher(self):
         # actual_dict = self.teacher.state_dict()
-        actual_dict = self.__getattribute__('save_dir_name_teacher{}'.format(self.global_rank)).state_dict()
+        actual_dict = self.__getattribute__('teacher{}'.format(self.global_rank)).state_dict()
         self.student.load_state_dict(actual_dict)
 
     def load_checkpoint_teacher(self, checkpoint_path, skip_last_layer=False):
