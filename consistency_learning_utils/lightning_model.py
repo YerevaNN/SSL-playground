@@ -613,7 +613,7 @@ class STAC(pl.LightningModule):
 
     def teacher_training_step(self, batch_list):
         sup_batch, _ = batch_list
-        self.teacher.set_is_supervised(True)
+        self.teacher0.set_is_supervised(True)
         # save_image(sup_batch[0][0], 'image1.png')
 
         sup_loss = self.teacher_supervised_step(sup_batch)
