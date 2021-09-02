@@ -312,7 +312,7 @@ class STAC(pl.LightningModule):
         }
 
         new_teacher_dict = OrderedDict()
-        for key, value in self.__getattribute__('save_dir_name_teacher{}'.format(self.global_rank)).state_dict().items():
+        for key, value in self.__getattr__('teacher{}'.format(self.global_rank)).state_dict().items():
             if key in student_model_dict.keys():
                 new_teacher_dict[key] = (
                     student_model_dict[key] * (1 - keep_rate) + value * keep_rate
@@ -320,7 +320,7 @@ class STAC(pl.LightningModule):
             else:
                 raise Exception("{} is not found in student model".format(key))
 
-        self.__getattribute__('save_dir_name_teacher{}'.format(self.global_rank)).load_state_dict(new_teacher_dict)
+        self.__getattr__('teacher{}'.format(self.global_rank)).load_state_dict(new_teacher_dict)
         # key = 'roi_heads.box_head.fc6.weight'
         # with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
         #     f.write("After EMA: GR={} key={} max value={}\n".format(
