@@ -935,7 +935,7 @@ class STAC(pl.LightningModule):
             self.validation_counter = 0
             for gpu in range(len(self.available_gpus)):
                 self.__getattribute__('teacher_trainer{}'.format(self.available_gpus[gpu])).fit(self)
-            self.teacher_trainer.fit(self)
+            # self.teacher_trainer.fit(self)
             print("Finished teacher")
 
         # self.load_best_teacher() # TODO I do not think this will always work
