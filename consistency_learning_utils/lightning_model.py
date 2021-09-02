@@ -515,7 +515,8 @@ class STAC(pl.LightningModule):
 
         for gpu in range(len(self.available_gpus)):
             self.__getattr__('teacher{}'.format(self.available_gpus[gpu])).eval()
-        self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+            self.current_gpu = self.available_gpus[gpu]
+            self.teacher_forward(unlabeled_x, unlabeled_image_paths)
 
         fused_predictions = []
         pred_values = self.teacher_pseudo_labels.values()
