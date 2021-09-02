@@ -157,6 +157,7 @@ class STAC(pl.LightningModule):
         self.testWithStudent = False
         self.onlyBurnIn = False
         self.no_val = False
+        self.current_gpu = 0
 
         bs = self.hparams['batch_size']
         self.available_gpus = os.getenv('CUDA_VISIBLE_DEVICES').split(',')
@@ -176,7 +177,7 @@ class STAC(pl.LightningModule):
         for gpu in range(len(self.available_gpus)):
             setattr(self, 'save_dir_name_teacher{}'.format(self.available_gpus[gpu]), os.path.join(version_folder, 'teacher{}'.format(self.available_gpus[gpu])))
         self.save_dir_name_student = os.path.join(version_folder, 'student')
-        self.output_csv = os.path.join(version_folder, 'output{}.csv'.format(self.global_rank))
+        self.output_csv = os.path.join(version_folder, 'output.csv')
         print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
             self.hparams['initialization'], self.hparams['reuse_classifier']
         ))
@@ -619,7 +620,7 @@ class STAC(pl.LightningModule):
 
     def teacher_training_step(self, batch_list):
         sup_batch, _ = batch_list
-        self.__getattr__('teacher{}'.format(self.global_rank)).set_is_supervised(True)
+        self.__getattr__('teacher{}'.format(self.current_gpu)).set_is_supervised(True)
 
         # self.teacher.set_is_supervised(True)
         # save_image(sup_batch[0][0], 'image1.png')
@@ -943,6 +944,7 @@ class STAC(pl.LightningModule):
 
             self.validation_counter = 0
             for gpu in range(len(self.available_gpus)):
+                self.current_gpu = self.available_gpus[gpu]
                 self.__getattribute__('teacher_trainer{}'.format(self.available_gpus[gpu])).fit(self)
             # self.teacher_trainer.fit(self)
             print("Finished teacher")
@@ -953,7 +955,7 @@ class STAC(pl.LightningModule):
         if self.stage != 7:
             self.copy_student_from_current_teacher()
             # for param in self.teacher.parameters():
-            for param in self.__getattr__('teacher{}'.format(self.global_rank)).parameters():
+            for param in self.__getattr__('teacher{}'.format(self.current_gpu)).parameters():
                 param.requires_grad = False
             # opt = self.optimizers()[0]
 
