@@ -15,6 +15,7 @@ from pytorch_lightning import Trainer
 from torchvision.utils import save_image
 
 from mean_average_precision import MetricBuilder
+from ensemble_boxes import *
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -160,6 +161,7 @@ class STAC(pl.LightningModule):
         bs = self.hparams['batch_size']
         self.available_gpus = os.getenv('CUDA_VISIBLE_DEVICES').split(',')
         gpu_num = len(self.available_gpus)
+        self.iou_threshhold = self.hparams['iou_thr']
 
         print("GPUs count {}, GPU ids {}".format(gpu_num, self.available_gpus))
         self.hparams['batches_per_epoch'] = max(1, int((self.hparams['labeled_num'] + bs - 1) / bs / max(1, gpu_num)))
@@ -189,12 +191,12 @@ class STAC(pl.LightningModule):
                         gamma=self.hparams['gamma'],
                         box_score_thresh=self.hparams['box_score_thresh'])
                     )
-            # self.teacher = model_changed_classifier(
-            #     initialize=self.teacher_init,
-            #     reuse_classifier=self.hparams['reuse_classifier'],
-            #     class_num=self.hparams['class_num'],
-            #     gamma=self.hparams['gamma'],
-            #     box_score_thresh=self.hparams['box_score_thresh'])
+        self.teacher = model_changed_classifier(
+            initialize=self.teacher_init,
+            reuse_classifier=self.hparams['reuse_classifier'],
+            class_num=self.hparams['class_num'],
+            gamma=self.hparams['gamma'],
+            box_score_thresh=self.hparams['box_score_thresh'])
 
         self.student = model_changed_classifier(
             initialize=self.hparams['initialization'],
@@ -401,7 +403,7 @@ class STAC(pl.LightningModule):
         )
 
         self.student_trainer = Trainer(
-            gpus=-1, checkpoint_callback=True, # what is this?
+            gpus=-1, checkpoint_callback=True,# what is this?
             accelerator='ddp',
             callbacks=[checkpoint_callback],
             logger=self.aim_logger,
@@ -430,7 +432,24 @@ class STAC(pl.LightningModule):
         return self.student.forward(x, image_paths=image_paths)
 
     def teacher_forward(self, x, image_paths):
-        return self.teacher.forward(x, image_paths=image_paths)
+        predictions = {}
+        fused_predictions = []
+        for gpu in range(len(self.available_gpus)):
+            predictions[gpu] = self.__getattribute__('teacher{}'.format(self.available_gpus[gpu])).forward(x, image_paths=image_paths)
+        pred_values = predictions.values()
+        for i in range(len(pred_values[0])):
+            boxes_list = []
+            scores_list = []
+            labels_list = []
+            for j in range(len(pred_values)):
+                boxes_list.append(pred_values[j][i]['boxes'])
+                labels_list.append(pred_values[j][i]['labels'])
+                scores_list.append(pred_values[j][i]['scores'])
+            boxes, scores, labels = weighted_boxes_fusion(boxes_list, scores_list, labels_list)
+            fused_pred = {'boxes': boxes, 'labels': labels, 'scores': scores}
+            fused_predictions.append(fused_pred)
+        return fused_predictions
+        # return self.teacher.forward(x, image_paths=image_paths)
 
     def forward(self, x, image_paths):
         if self.onTeacher:

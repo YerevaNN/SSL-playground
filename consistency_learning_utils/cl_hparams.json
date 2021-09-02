@@ -27,6 +27,7 @@
 
     "augmentation": 2,
     "confidence_threshold": 0.8,
+    "iou_thr": 0.55,
     "thresholding_method": "dynamic1",
     "box_score_thresh": 0.005,
     "EMA_keep_rate": 0.996,
