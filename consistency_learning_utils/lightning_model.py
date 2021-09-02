@@ -485,7 +485,7 @@ class STAC(pl.LightningModule):
         target = make_target_from_y(y)
 
         # y_hat = self.teacher(x, target, image_paths)
-        y_hat = self.__getattr__('teacher{}'.format(self.global_rank))(x, target, image_paths)
+        y_hat = self.__getattr__('teacher{}'.format(self.current_gpu))(x, target, image_paths)
 
         with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
             f.write("GR={} images=({})\n".format(
