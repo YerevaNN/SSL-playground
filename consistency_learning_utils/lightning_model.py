@@ -158,6 +158,7 @@ class STAC(pl.LightningModule):
         self.onlyBurnIn = False
         self.no_val = False
         self.current_gpu = 0
+        self.teacher_pseudo_labels = {}
 
         bs = self.hparams['batch_size']
         self.available_gpus = os.getenv('CUDA_VISIBLE_DEVICES').split(',')
@@ -438,23 +439,8 @@ class STAC(pl.LightningModule):
         return self.student.forward(x, image_paths=image_paths)
 
     def teacher_forward(self, x, image_paths):
-        predictions = {}
-        fused_predictions = []
-        for gpu in range(len(self.available_gpus)):
-            predictions[gpu] = self.__getattr__('teacher{}'.format(self.available_gpus[gpu])).forward(x, image_paths=image_paths)
-        pred_values = predictions.values()
-        for i in range(len(pred_values[0])):
-            boxes_list = []
-            scores_list = []
-            labels_list = []
-            for j in range(len(pred_values)):
-                boxes_list.append(pred_values[j][i]['boxes'])
-                labels_list.append(pred_values[j][i]['labels'])
-                scores_list.append(pred_values[j][i]['scores'])
-            boxes, scores, labels = weighted_boxes_fusion(boxes_list, scores_list, labels_list)
-            fused_pred = {'boxes': boxes, 'labels': labels, 'scores': scores}
-            fused_predictions.append(fused_pred)
-        return fused_predictions
+        self.teacher_pseudo_labels[self.current_gpu] = \
+            self.__getattr__('teacher{}'.format(self.current_gpu)).forward(x, image_paths=image_paths)
         # return self.teacher.forward(x, image_paths=image_paths)
 
     def forward(self, x, image_paths):
@@ -529,7 +515,23 @@ class STAC(pl.LightningModule):
 
         for gpu in range(len(self.available_gpus)):
             self.__getattr__('teacher{}'.format(self.available_gpus[gpu])).eval()
-        unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+        self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+
+        fused_predictions = []
+        pred_values = self.teacher_pseudo_labels.values()
+        for i in range(len(pred_values[0])):
+            boxes_list = []
+            scores_list = []
+            labels_list = []
+            for j in range(len(pred_values)):
+                boxes_list.append(pred_values[j][i]['boxes'])
+                labels_list.append(pred_values[j][i]['labels'])
+                scores_list.append(pred_values[j][i]['scores'])
+            boxes, scores, labels = weighted_boxes_fusion(boxes_list, scores_list, labels_list)
+            fused_pred = {'boxes': boxes, 'labels': labels, 'scores': scores}
+            fused_predictions.append(fused_pred)
+
+        unlab_pred = fused_predictions
         # save_image(unlabeled_x[0], 'unlabeled.png')
         # save_image(augmented_x[0], 'augmented.png')
 
