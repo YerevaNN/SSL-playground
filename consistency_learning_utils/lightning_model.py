@@ -639,7 +639,7 @@ class STAC(pl.LightningModule):
 
         self.student.set_is_supervised(False)
 
-        unsup_loss = self.student_unsupervised_step(unsup_batch)
+        unsup_loss = self.student_unsupervised_step(unsup_batch).cuda(0)
 
         sup_loss = self.frcnn_loss(sup_y_hat)
         loss = sup_loss + self.lam * unsup_loss
