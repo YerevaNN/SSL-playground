@@ -435,7 +435,7 @@ class STAC(pl.LightningModule):
         predictions = {}
         fused_predictions = []
         for gpu in range(len(self.available_gpus)):
-            predictions[gpu] = self.__getattribute__('teacher{}'.format(self.available_gpus[gpu])).forward(x, image_paths=image_paths)
+            predictions[gpu] = self.__getattribute__('teacher{}'.format(self.available_gpus[gpu])).forward(x, image_paths=image_paths).cpu()
         pred_values = predictions.values()
         for i in range(len(pred_values[0])):
             boxes_list = []
