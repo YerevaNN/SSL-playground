@@ -441,6 +441,7 @@ class STAC(pl.LightningModule):
         predictions = {}
         fused_predictions = []
         for gpu in range(len(self.available_gpus)):
+            self.__getattr__('teacher{}'.format(gpu)).set_is_supervised(False)
             predictions[gpu] = self.__getattr__('teacher{}'.format(self.available_gpus[gpu])).forward(x, image_paths=image_paths)
         pred_values = predictions.values()
         for i in range(len(pred_values[0])):
