@@ -354,7 +354,7 @@ class STAC(pl.LightningModule):
         )
         setattr(self, 'teacher_trainer{}'.format(gpu), Trainer(
             gpus=gpu, checkpoint_callback=True, # what is this?
-            accelerator='ddp',
+            # accelerator='ddp',
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
             logger=self.aim_logger,
