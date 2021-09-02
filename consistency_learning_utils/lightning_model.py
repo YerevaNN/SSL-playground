@@ -258,19 +258,19 @@ class STAC(pl.LightningModule):
         checkpoint_path = os.path.join(self.save_dir_name_teacher0, checkpoint_name)
         best_dict = torch.load(checkpoint_path)
         actual_dict = {k[8:]: v for k, v in best_dict['state_dict'].items() if k.startswith('teacher')}
-        self.teacher.load_state_dict(actual_dict)
+        self.teacher0.load_state_dict(actual_dict)
 
     def copy_student_from_current_teacher(self):
-        actual_dict = self.teacher.state_dict()
+        actual_dict = self.teacher0.state_dict()
         self.student.load_state_dict(actual_dict)
 
     def load_checkpoint_teacher(self, checkpoint_path, skip_last_layer=False):
         checkpoint = torch.load(checkpoint_path)
-        model_dict = self.teacher.state_dict()
+        model_dict = self.teacher0.state_dict()
         loaded_dict = {k[8:]: v for k, v in checkpoint['state_dict'].items() if k.startswith('teacher')
                        and (('cls_score' not in k and 'bbox_pred' not in k) if skip_last_layer else True)}
         model_dict.update(loaded_dict)
-        self.teacher.load_state_dict(model_dict)
+        self.teacher0.load_state_dict(model_dict)
 
     def load_checkpoint_student(self, checkpoint_path, skip_last_layer=False):
         checkpoint = torch.load(checkpoint_path)
@@ -306,7 +306,7 @@ class STAC(pl.LightningModule):
         }
 
         new_teacher_dict = OrderedDict()
-        for key, value in self.teacher.state_dict().items():
+        for key, value in self.teacher0.state_dict().items():
             if key in student_model_dict.keys():
                 new_teacher_dict[key] = (
                     student_model_dict[key] * (1 - keep_rate) + value * keep_rate
@@ -314,7 +314,7 @@ class STAC(pl.LightningModule):
             else:
                 raise Exception("{} is not found in student model".format(key))
 
-        self.teacher.load_state_dict(new_teacher_dict)
+        self.teacher0.load_state_dict(new_teacher_dict)
         # key = 'roi_heads.box_head.fc6.weight'
         # with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
         #     f.write("After EMA: GR={} key={} max value={}\n".format(
@@ -435,7 +435,7 @@ class STAC(pl.LightningModule):
         predictions = {}
         fused_predictions = []
         for gpu in range(len(self.available_gpus)):
-            predictions[gpu] = self.__getattribute__('teacher{}'.format(self.available_gpus[gpu])).forward(x, image_paths=image_paths).cpu()
+            predictions[gpu] = self.__getattribute__('teacher{}'.format(self.available_gpus[gpu])).forward(x, image_paths=image_paths)
         pred_values = predictions.values()
         for i in range(len(pred_values[0])):
             boxes_list = []
@@ -478,7 +478,7 @@ class STAC(pl.LightningModule):
 
         target = make_target_from_y(y)
 
-        y_hat = self.teacher(x, target, image_paths)
+        y_hat = self.teacher0(x, target, image_paths)
 
         with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
             f.write("GR={} images=({})\n".format(
@@ -943,7 +943,7 @@ class STAC(pl.LightningModule):
 
         if self.stage != 7:
             self.copy_student_from_current_teacher()
-            for param in self.teacher.parameters():
+            for param in self.teacher0.parameters():
                 param.requires_grad = False
             # opt = self.optimizers()[0]
 
