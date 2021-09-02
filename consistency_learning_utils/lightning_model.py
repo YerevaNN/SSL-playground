@@ -438,25 +438,24 @@ class STAC(pl.LightningModule):
         return self.student.forward(x, image_paths=image_paths)
 
     def teacher_forward(self, x, image_paths):
-        # predictions = {}
-        # fused_predictions = []
-        # for gpu in range(len(self.available_gpus)):
-        #     self.__getattr__('teacher{}'.format(gpu)).set_is_supervised(False)
-        #     predictions[gpu] = self.__getattr__('teacher{}'.format(self.available_gpus[gpu])).forward(x, image_paths=image_paths)
-        # pred_values = predictions.values()
-        # for i in range(len(pred_values[0])):
-        #     boxes_list = []
-        #     scores_list = []
-        #     labels_list = []
-        #     for j in range(len(pred_values)):
-        #         boxes_list.append(pred_values[j][i]['boxes'])
-        #         labels_list.append(pred_values[j][i]['labels'])
-        #         scores_list.append(pred_values[j][i]['scores'])
-        #     boxes, scores, labels = weighted_boxes_fusion(boxes_list, scores_list, labels_list)
-        #     fused_pred = {'boxes': boxes, 'labels': labels, 'scores': scores}
-        #     fused_predictions.append(fused_pred)
-        # return fused_predictions
-        return self.teacher0.forward(x, image_paths=image_paths)
+        predictions = {}
+        fused_predictions = []
+        for gpu in range(len(self.available_gpus)):
+            predictions[gpu] = self.__getattr__('teacher{}'.format(self.available_gpus[gpu])).forward(x, image_paths=image_paths)
+        pred_values = predictions.values()
+        for i in range(len(pred_values[0])):
+            boxes_list = []
+            scores_list = []
+            labels_list = []
+            for j in range(len(pred_values)):
+                boxes_list.append(pred_values[j][i]['boxes'])
+                labels_list.append(pred_values[j][i]['labels'])
+                scores_list.append(pred_values[j][i]['scores'])
+            boxes, scores, labels = weighted_boxes_fusion(boxes_list, scores_list, labels_list)
+            fused_pred = {'boxes': boxes, 'labels': labels, 'scores': scores}
+            fused_predictions.append(fused_pred)
+        return fused_predictions
+        # return self.teacher.forward(x, image_paths=image_paths)
 
     def forward(self, x, image_paths):
         if self.onTeacher:
@@ -528,7 +527,8 @@ class STAC(pl.LightningModule):
             augmented_x.append(augment[0])
             augmented_image_paths.append(augment[2])
 
-        self.__getattr__('teacher{}'.format(self.global_rank)).eval()
+        for gpu in range(len(self.available_gpus)):
+            self.__getattr__('teacher{}'.format(self.available_gpus[gpu])).eval()
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
         # save_image(unlabeled_x[0], 'unlabeled.png')
         # save_image(augmented_x[0], 'augmented.png')
