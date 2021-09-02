@@ -191,13 +191,13 @@ class STAC(pl.LightningModule):
                         gamma=self.hparams['gamma'],
                         box_score_thresh=self.hparams['box_score_thresh'])
                     )
-        self.teacher = model_changed_classifier(
-            initialize=self.teacher_init,
-            reuse_classifier=self.hparams['reuse_classifier'],
-            class_num=self.hparams['class_num'],
-            gamma=self.hparams['gamma'],
-            box_score_thresh=self.hparams['box_score_thresh'])
-
+        # self.teacher = model_changed_classifier(
+        #     initialize=self.teacher_init,
+        #     reuse_classifier=self.hparams['reuse_classifier'],
+        #     class_num=self.hparams['class_num'],
+        #     gamma=self.hparams['gamma'],
+        #     box_score_thresh=self.hparams['box_score_thresh'])
+        #
         self.student = model_changed_classifier(
             initialize=self.hparams['initialization'],
             reuse_classifier=self.hparams['reuse_classifier'],
