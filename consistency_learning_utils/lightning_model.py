@@ -528,8 +528,6 @@ class STAC(pl.LightningModule):
             augmented_image_paths.append(augment[2])
 
         self.__getattr__('teacher{}'.format(self.global_rank)).eval()
-        for gpu in range(len(self.available_gpus)):
-            self.__getattr__('teacher{}'.format(self.available_gpus[gpu])).set_is_supervised(False)
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
         # save_image(unlabeled_x[0], 'unlabeled.png')
         # save_image(augmented_x[0], 'augmented.png')
@@ -650,7 +648,7 @@ class STAC(pl.LightningModule):
 
         self.student.set_is_supervised(False)
 
-        unsup_loss = self.student_unsupervised_step(unsup_batch).cuda(0)
+        unsup_loss = self.student_unsupervised_step(unsup_batch)
 
         sup_loss = self.frcnn_loss(sup_y_hat)
         loss = sup_loss + self.lam * unsup_loss
