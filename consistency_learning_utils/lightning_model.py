@@ -629,7 +629,9 @@ class STAC(pl.LightningModule):
         # save_image(sup_batch[0][0], 'image1.png')
 
         sup_loss = self.teacher_supervised_step(sup_batch)
-        self.__getattr__('teacher{}'.format(self.current_gpu)).set_is_supervised(False)
+        loss = self.frcnn_loss(sup_loss)
+
+        # self.__getattr__('teacher{}'.format(self.current_gpu)).set_is_supervised(False)
         unlabeled_x, unlabeled_image_paths = [], []
 
         for i in unsup_batch:
@@ -640,7 +642,6 @@ class STAC(pl.LightningModule):
         self.__getattr__('teacher{}'.format(self.current_gpu)).eval()
         self.teacher_forward(unlabeled_x, unlabeled_image_paths)
 
-        loss = self.frcnn_loss(sup_loss)
         self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(sup_loss['loss_box_reg'].item(), name='loss_box_reg',
