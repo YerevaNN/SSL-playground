@@ -360,7 +360,7 @@ class STAC(pl.LightningModule):
             period=1
         )
         setattr(self, 'teacher_trainer{}'.format(gpu), Trainer(
-            gpus=-1, checkpoint_callback=True, # what is this?
+            gpus=gpu, checkpoint_callback=True, # what is this?
             accelerator='ddp',
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
@@ -439,9 +439,8 @@ class STAC(pl.LightningModule):
         return self.student.forward(x, image_paths=image_paths)
 
     def teacher_forward(self, x, image_paths):
-        for gpu in range(len(self.available_gpus)):
-            self.teacher_pseudo_labels[self.available_gpus[gpu]] = \
-                self.__getattr__('teacher{}'.format(self.available_gpus[gpu])).forward(x, image_paths=image_paths)
+        self.teacher_pseudo_labels[self.current_gpu] = \
+            self.__getattr__('teacher{}'.format(self.current_gpu)).forward(x, image_paths=image_paths)
         # return self.teacher.forward(x, image_paths=image_paths)
 
     def forward(self, x, image_paths):
@@ -514,9 +513,9 @@ class STAC(pl.LightningModule):
             augmented_x.append(augment[0])
             augmented_image_paths.append(augment[2])
 
-        for gpu in range(len(self.available_gpus)):
-            self.__getattr__('teacher{}'.format(self.available_gpus[gpu])).eval()
-        self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+        # for gpu in range(len(self.available_gpus)):
+        #     self.__getattr__('teacher{}'.format(self.available_gpus[gpu])).eval()
+        # self.teacher_forward(unlabeled_x, unlabeled_image_paths)
 
         fused_predictions = []
         pred_values = self.teacher_pseudo_labels.values()
@@ -551,10 +550,10 @@ class STAC(pl.LightningModule):
             # calculate stats for this batch
             box_count = 0
             for sample_pred in unlab_pred:
-                labels = sample_pred['labels'].cpu()
-                scores = sample_pred['scores'].cpu()
+                labels = sample_pred['labels']
+                scores = sample_pred['scores']
                 for l, s in zip(labels, scores):
-                    thresholds[l] += s
+                    thresholds[int(l)] += s
                     box_count += 1
             if box_count == 0:
                 thresholds += self.confidence_threshold
@@ -566,15 +565,15 @@ class STAC(pl.LightningModule):
                 f.write(' '.join(["{:.2f}".format(t) for t in thresholds]) + '\n')
 
         for i, sample_pred in enumerate(unlab_pred):
-            boxes = sample_pred['boxes'].cpu()
-            labels = sample_pred['labels'].cpu()
-            scores = sample_pred['scores'].cpu()
+            boxes = sample_pred['boxes']
+            labels = sample_pred['labels']
+            scores = sample_pred['scores']
 
             index = []
             target_boxes = []
             target_labels = []
             for j in range(len(labels)):
-                if scores[j] < thresholds[labels[j]]:
+                if scores[j] < thresholds[int(labels[j])]:
                     index.append(j)
             pseudo_boxes_all += len(boxes)
 
@@ -623,13 +622,23 @@ class STAC(pl.LightningModule):
         return unsup_loss
 
     def teacher_training_step(self, batch_list):
-        sup_batch, _ = batch_list
+        sup_batch, unsup_batch = batch_list
         self.__getattr__('teacher{}'.format(self.current_gpu)).set_is_supervised(True)
 
         # self.teacher.set_is_supervised(True)
         # save_image(sup_batch[0][0], 'image1.png')
 
         sup_loss = self.teacher_supervised_step(sup_batch)
+        self.__getattr__('teacher{}'.format(self.current_gpu)).set_is_supervised(False)
+        unlabeled_x, unlabeled_image_paths = [], []
+
+        for i in unsup_batch:
+            unlab, augment = i
+            unlabeled_x.append(unlab[0])
+            unlabeled_image_paths.append(unlab[2])
+
+        self.__getattr__('teacher{}'.format(self.current_gpu)).eval()
+        self.teacher_forward(unlabeled_x, unlabeled_image_paths)
 
         loss = self.frcnn_loss(sup_loss)
         self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
