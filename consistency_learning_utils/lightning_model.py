@@ -163,7 +163,7 @@ class STAC(pl.LightningModule):
         bs = self.hparams['batch_size']
         self.available_gpus = os.getenv('CUDA_VISIBLE_DEVICES').split(',')
         gpu_num = len(self.available_gpus)
-        self.teacher_models = list(range(gpu_num))
+        self.teacher_models = []
         self.iou_threshhold = self.hparams['iou_thr']
 
         print("GPUs count {}, GPU ids {}".format(gpu_num, self.available_gpus))
@@ -514,7 +514,7 @@ class STAC(pl.LightningModule):
             augmented_image_paths.append(augment[2])
 
         for gpu in range(len(self.available_gpus)):
-            self.teacher_models[gpu] = self.load_from_checkpoint(self.__getattribute__('save_dir_name_teacher{}'.format(self.available_gpus[gpu])) + '/last.ckpt')
+            self.teacher_models.append(self.load_from_checkpoint(self.__getattribute__('save_dir_name_teacher{}'.format(self.available_gpus[gpu])) + '/last.ckpt'))
             self.teacher_models[gpu].eval()
             self.current_gpu = self.available_gpus[gpu]
             self.teacher_pseudo_labels[gpu] = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
