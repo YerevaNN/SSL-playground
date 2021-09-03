@@ -439,9 +439,7 @@ class STAC(pl.LightningModule):
         return self.student.forward(x, image_paths=image_paths)
 
     def teacher_forward(self, x, image_paths):
-        self.teacher_pseudo_labels[self.current_gpu] = \
-            self.__getattr__('teacher{}'.format(self.current_gpu)).forward(x, image_paths=image_paths)
-        # return self.teacher.forward(x, image_paths=image_paths)
+        return self.teacher.forward(x, image_paths=image_paths)
 
     def forward(self, x, image_paths):
         if self.onTeacher:
@@ -513,8 +511,10 @@ class STAC(pl.LightningModule):
             augmented_x.append(augment[0])
             augmented_image_paths.append(augment[2])
 
-        # for gpu in range(len(self.available_gpus)):
-        #     self.__getattr__('teacher{}'.format(self.available_gpus[gpu])).eval()
+        for gpu in range(len(self.available_gpus)):
+            teacher_model = self.load_from_checkpoint(self.__getattribute__('save_dir_name_teacher{}'.format(self.available_gpus[gpu])) + 'last.ckpt')
+            teacher_model.eval()
+            self.teacher_pseudo_labels[self.available_gpus[gpu]] = teacher_model.forward(unlabeled_x, unlabeled_image_paths)
         # self.teacher_forward(unlabeled_x, unlabeled_image_paths)
 
         fused_predictions = []
@@ -622,7 +622,7 @@ class STAC(pl.LightningModule):
         return unsup_loss
 
     def teacher_training_step(self, batch_list):
-        sup_batch, unsup_batch = batch_list
+        sup_batch, _ = batch_list
         self.__getattr__('teacher{}'.format(self.current_gpu)).set_is_supervised(True)
 
         # self.teacher.set_is_supervised(True)
@@ -640,13 +640,6 @@ class STAC(pl.LightningModule):
         self.logger.experiment.track(sup_loss['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(loss.item(), name='loss_sum', model=self.onTeacher, stage=self.stage)
-
-        self.unlabeled_x, self.unlabeled_image_paths = [], []
-
-        for i in unsup_batch:
-            unlab, _ = i
-            self.unlabeled_x.append(unlab[0])
-            self.unlabeled_image_paths.append(unlab[2])
 
         return {'loss': loss}
 
@@ -959,12 +952,6 @@ class STAC(pl.LightningModule):
                 self.__getattribute__('teacher_trainer{}'.format(self.available_gpus[gpu])).fit(self)
             # self.teacher_trainer.fit(self)
             print("Finished teacher")
-
-            print("Creating pseudolabels")
-            for gpu in range(len(self.available_gpus)):
-                self.current_gpu = self.available_gpus[gpu]
-                self.__getattr__('teacher{}'.format(self.available_gpus[gpu])).eval()
-                self.teacher_forward(self.unlabeled_x, self.unlabeled_image_paths)
 
         # self.load_best_teacher() # TODO I do not think this will always work
         # The best teacher is the last one, as we do not know how to measure what it the best one
