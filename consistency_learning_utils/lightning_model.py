@@ -163,7 +163,7 @@ class STAC(pl.LightningModule):
         bs = self.hparams['batch_size']
         self.available_gpus = os.getenv('CUDA_VISIBLE_DEVICES').split(',')
         gpu_num = len(self.available_gpus)
-        self.teacher_models = list(range(len(gpu_num)))
+        self.teacher_models = list(range(gpu_num))
         self.iou_threshhold = self.hparams['iou_thr']
 
         print("GPUs count {}, GPU ids {}".format(gpu_num, self.available_gpus))
