@@ -963,7 +963,7 @@ class STAC(pl.LightningModule):
             print("Creating pseudolabels")
             for gpu in range(len(self.available_gpus)):
                 self.current_gpu = self.available_gpus[gpu]
-                self.__getattribute__('teacher{}'.format(self.available_gpus[gpu])).eval()
+                self.__getattr__('teacher{}'.format(self.available_gpus[gpu])).eval()
                 self.teacher_forward(self.unlabeled_x, self.unlabeled_image_paths)
 
         # self.load_best_teacher() # TODO I do not think this will always work
