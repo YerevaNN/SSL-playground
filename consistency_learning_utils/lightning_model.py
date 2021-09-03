@@ -441,6 +441,7 @@ class STAC(pl.LightningModule):
 
     def teacher_forward(self, x, image_paths):
         # return self.teacher.forward(x, image_paths=image_paths)
+        print(self.teacher_models)
         return self.teacher_models[int(self.current_gpu)].forward(x, image_paths=image_paths)
 
     def forward(self, x, image_paths):
@@ -514,7 +515,7 @@ class STAC(pl.LightningModule):
             augmented_image_paths.append(augment[2])
 
         for gpu in range(len(self.available_gpus)):
-            self.teacher_models.append(self.load_from_checkpoint(self.__getattribute__('save_dir_name_teacher{}'.format(self.available_gpus[gpu])) + '/last.ckpt'))
+            self.teacher_models[int(self.available_gpus[gpu])] = self.load_from_checkpoint(self.__getattribute__('save_dir_name_teacher{}'.format(self.available_gpus[gpu])) + '/last.ckpt')
             self.teacher_models[gpu].eval()
             self.current_gpu = self.available_gpus[gpu]
             self.teacher_pseudo_labels[gpu] = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
