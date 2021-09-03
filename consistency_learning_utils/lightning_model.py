@@ -634,13 +634,13 @@ class STAC(pl.LightningModule):
         # self.__getattr__('teacher{}'.format(self.current_gpu)).set_is_supervised(False)
         unlabeled_x, unlabeled_image_paths = [], []
 
-        for i in unsup_batch:
-            unlab, augment = i
-            unlabeled_x.append(unlab[0])
-            unlabeled_image_paths.append(unlab[2])
-
-        self.__getattr__('teacher{}'.format(self.current_gpu)).eval()
-        self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+        # for i in unsup_batch:
+        #     unlab, _ = i
+        #     unlabeled_x.append(unlab[0])
+        #     unlabeled_image_paths.append(unlab[2])
+        #
+        # self.__getattr__('teacher{}'.format(self.current_gpu)).eval()
+        # self.teacher_forward(unlabeled_x, unlabeled_image_paths)
 
         self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
                                          model=self.onTeacher, stage=self.stage)
