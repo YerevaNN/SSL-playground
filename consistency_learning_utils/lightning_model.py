@@ -439,9 +439,10 @@ class STAC(pl.LightningModule):
         return self.student.forward(x, image_paths=image_paths)
 
     def teacher_forward(self, x, image_paths, gpu_number=None):
-        if not gpu_number is None:
-            self.teacher_pseudo_labels[gpu_number] = self.teacher_models[gpu_number].forward(x, image_paths=image_paths)
-        return self.teacher.forward(x, image_paths=image_paths)
+        if gpu_number is None:
+            return self.teacher.forward(x, image_paths=image_paths)
+        self.teacher_pseudo_labels[int(gpu_number)] = self.teacher_models[int(gpu_number)].forward(x, image_paths=image_paths)
+        return
 
     def forward(self, x, image_paths):
         if self.onTeacher:
