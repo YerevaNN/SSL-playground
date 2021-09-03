@@ -438,10 +438,9 @@ class STAC(pl.LightningModule):
     def student_forward(self, x, image_paths):
         return self.student.forward(x, image_paths=image_paths)
 
-    def teacher_forward(self, x, image_paths, gpu_number=None):
-        if gpu_number is None:
-            return self.teacher.forward(x, image_paths=image_paths)
-        return self.teacher_models[int(gpu_number)].forward(x, image_paths=image_paths)
+    def teacher_forward(self, x, image_paths):
+        # return self.teacher.forward(x, image_paths=image_paths)
+        return self.teacher_models[self.current_gpu].forward(x, image_paths=image_paths)
 
     def forward(self, x, image_paths):
         if self.onTeacher:
@@ -517,7 +516,8 @@ class STAC(pl.LightningModule):
         for gpu in range(len(self.available_gpus)):
             self.teacher_models[gpu] = self.load_from_checkpoint(self.__getattribute__('save_dir_name_teacher{}'.format(self.available_gpus[gpu])) + '/last.ckpt')
             self.teacher_models[gpu].eval()
-            self.teacher_pseudo_labels[gpu] = self.teacher_forward(unlabeled_x, unlabeled_image_paths, self.available_gpus[gpu])
+            self.current_gpu = self.available_gpus[gpu]
+            self.teacher_pseudo_labels[gpu] = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
 
         fused_predictions = []
         pred_values = self.teacher_pseudo_labels.values()
