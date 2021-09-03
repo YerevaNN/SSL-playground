@@ -641,16 +641,12 @@ class STAC(pl.LightningModule):
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(loss.item(), name='loss_sum', model=self.onTeacher, stage=self.stage)
 
-        # self.__getattr__('teacher{}'.format(self.current_gpu)).set_is_supervised(False)
-        unlabeled_x, unlabeled_image_paths = [], []
+        self.unlabeled_x, self.unlabeled_image_paths = [], []
 
         for i in unsup_batch:
             unlab, _ = i
-            unlabeled_x.append(unlab[0])
-            unlabeled_image_paths.append(unlab[2])
-
-        self.__getattr__('teacher{}'.format(self.current_gpu)).eval()
-        self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+            self.unlabeled_x.append(unlab[0])
+            self.unlabeled_image_paths.append(unlab[2])
 
         return {'loss': loss}
 
@@ -963,6 +959,12 @@ class STAC(pl.LightningModule):
                 self.__getattribute__('teacher_trainer{}'.format(self.available_gpus[gpu])).fit(self)
             # self.teacher_trainer.fit(self)
             print("Finished teacher")
+
+            print("Creating pseudolabels")
+            for gpu in range(len(self.available_gpus)):
+                self.current_gpu = self.available_gpus[gpu]
+                self.__getattribute__('teacher_trainer{}'.format(self.available_gpus[gpu])).eval()
+                self.teacher_forward(self.unlabeled_x, self.unlabeled_image_paths)
 
         # self.load_best_teacher() # TODO I do not think this will always work
         # The best teacher is the last one, as we do not know how to measure what it the best one
