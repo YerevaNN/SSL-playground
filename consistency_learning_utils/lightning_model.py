@@ -194,13 +194,13 @@ class STAC(pl.LightningModule):
                         gamma=self.hparams['gamma'],
                         box_score_thresh=self.hparams['box_score_thresh'])
                     )
-        # self.teacher = model_changed_classifier(
-        #     initialize=self.teacher_init,
-        #     reuse_classifier=self.hparams['reuse_classifier'],
-        #     class_num=self.hparams['class_num'],
-        #     gamma=self.hparams['gamma'],
-        #     box_score_thresh=self.hparams['box_score_thresh'])
-        #
+        self.teacher = model_changed_classifier(
+            initialize=self.teacher_init,
+            reuse_classifier=self.hparams['reuse_classifier'],
+            class_num=self.hparams['class_num'],
+            gamma=self.hparams['gamma'],
+            box_score_thresh=self.hparams['box_score_thresh'])
+
         self.student = model_changed_classifier(
             initialize=self.hparams['initialization'],
             reuse_classifier=self.hparams['reuse_classifier'],
@@ -513,8 +513,11 @@ class STAC(pl.LightningModule):
             augmented_image_paths.append(augment[2])
 
         for gpu in range(len(self.available_gpus)):
-            self.teacher = self.load_from_checkpoint(
-                self.__getattribute__('save_dir_name_teacher{}'.format(self.available_gpus[gpu])) + '/last.ckpt')
+            checkpoint = torch.load(self.__getattribute__('save_dir_name_teacher{}'.format(self.available_gpus[gpu])) + '/last.ckpt')
+            model_dict = self.teacher.state_dict()
+            loaded_dict = {k[8:]: v for k, v in checkpoint['state_dict'].items() if k.startswith('teacher')}
+            model_dict.update(loaded_dict)
+            self.teacher.load_state_dict(model_dict)
             self.teacher.eval()
             self.teacher_pseudo_labels[gpu] = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
 
