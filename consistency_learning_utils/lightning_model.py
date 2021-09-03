@@ -631,17 +631,6 @@ class STAC(pl.LightningModule):
         sup_loss = self.teacher_supervised_step(sup_batch)
         loss = self.frcnn_loss(sup_loss)
 
-        # self.__getattr__('teacher{}'.format(self.current_gpu)).set_is_supervised(False)
-        unlabeled_x, unlabeled_image_paths = [], []
-
-        # for i in unsup_batch:
-        #     unlab, _ = i
-        #     unlabeled_x.append(unlab[0])
-        #     unlabeled_image_paths.append(unlab[2])
-        #
-        # self.__getattr__('teacher{}'.format(self.current_gpu)).eval()
-        # self.teacher_forward(unlabeled_x, unlabeled_image_paths)
-
         self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(sup_loss['loss_box_reg'].item(), name='loss_box_reg',
@@ -651,6 +640,18 @@ class STAC(pl.LightningModule):
         self.logger.experiment.track(sup_loss['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(loss.item(), name='loss_sum', model=self.onTeacher, stage=self.stage)
+
+        # self.__getattr__('teacher{}'.format(self.current_gpu)).set_is_supervised(False)
+        unlabeled_x, unlabeled_image_paths = [], []
+
+        for i in unsup_batch:
+            unlab, _ = i
+            unlabeled_x.append(unlab[0])
+            unlabeled_image_paths.append(unlab[2])
+
+        self.__getattr__('teacher{}'.format(self.current_gpu)).eval()
+        self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+
         return {'loss': loss}
 
     def student_training_step(self, batch_list):
