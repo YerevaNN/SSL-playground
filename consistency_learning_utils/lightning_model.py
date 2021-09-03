@@ -514,9 +514,6 @@ class STAC(pl.LightningModule):
             augmented_image_paths.append(augment[2])
 
         for gpu in range(len(self.available_gpus)):
-            model = self.load_from_checkpoint(self.__getattribute__('save_dir_name_teacher{}'.format(self.available_gpus[gpu])) + '/last.ckpt')
-            model.eval()
-            self.teacher_models[int(self.available_gpus[gpu])] = model
             self.current_gpu = self.available_gpus[gpu]
             self.teacher_pseudo_labels[gpu] = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
 
@@ -955,6 +952,12 @@ class STAC(pl.LightningModule):
                 self.__getattribute__('teacher_trainer{}'.format(self.available_gpus[gpu])).fit(self)
             # self.teacher_trainer.fit(self)
             print("Finished teacher")
+
+            for gpu in range(len(self.available_gpus)):
+                model = self.load_from_checkpoint(
+                    self.__getattribute__('save_dir_name_teacher{}'.format(self.available_gpus[gpu])) + '/last.ckpt')
+                model.eval()
+                self.teacher_models[int(self.available_gpus[gpu])] = model
 
         # self.load_best_teacher() # TODO I do not think this will always work
         # The best teacher is the last one, as we do not know how to measure what it the best one
