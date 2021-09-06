@@ -37,7 +37,7 @@
 
     "seed": 1,
     "validation_part": 0,
-    "num_workers": 0,
+    "num_workers": 2,
 
     "consistency_lambda": 2,
     "consistency_criterion": "KL"

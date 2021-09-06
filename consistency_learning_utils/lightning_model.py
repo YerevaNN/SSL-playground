@@ -15,7 +15,6 @@ from pytorch_lightning import Trainer
 from torchvision.utils import save_image
 
 from mean_average_precision import MetricBuilder
-from ensemble_boxes import *
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -157,14 +156,15 @@ class STAC(pl.LightningModule):
         self.testWithStudent = False
         self.onlyBurnIn = False
         self.no_val = False
-        self.current_gpu = 0
-        self.teacher_pseudo_labels = {}
 
         bs = self.hparams['batch_size']
-        self.available_gpus = os.getenv('CUDA_VISIBLE_DEVICES').split(',')
-        gpu_num = len(self.available_gpus)
-        self.teacher_models = list(range(gpu_num))
-        self.iou_threshhold = self.hparams['iou_thr']
+        env = os.getenv('CUDA_VISIBLE_DEVICES')
+        if env is not None:
+            self.available_gpus = env.split(',')
+            gpu_num = len(self.available_gpus)
+        else:
+            self.available_gpus = '0'
+            gpu_num = 1
 
         print("GPUs count {}, GPU ids {}".format(gpu_num, self.available_gpus))
         self.hparams['batches_per_epoch'] = max(1, int((self.hparams['labeled_num'] + bs - 1) / bs / max(1, gpu_num)))
@@ -175,9 +175,7 @@ class STAC(pl.LightningModule):
         self.onTeacher = True  # as opposed to "on student"
 
         version_folder = os.path.join(self.hparams['phase_folder'], self.hparams['version_name'])
-        # self.save_dir_name_teacher = os.path.join(version_folder, 'teacher')
-        for gpu in range(len(self.available_gpus)):
-            setattr(self, 'save_dir_name_teacher{}'.format(self.available_gpus[gpu]), os.path.join(version_folder, 'teacher{}'.format(self.available_gpus[gpu])))
+        self.save_dir_name_teacher = os.path.join(version_folder, 'teacher')
         self.save_dir_name_student = os.path.join(version_folder, 'student')
         self.output_csv = os.path.join(version_folder, 'output.csv')
         print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
@@ -185,15 +183,7 @@ class STAC(pl.LightningModule):
         ))
         self.teacher_init = 'full' if (self.hparams['teacher_init_path'] and (not self.hparams['skip_burn_in'])) else \
             self.hparams['initialization']
-        for gpu in range(len(self.available_gpus)):
-            setattr(self, 'teacher{}'.format(self.available_gpus[gpu]),
-                    model_changed_classifier(
-                        initialize=self.teacher_init,
-                        reuse_classifier=self.hparams['reuse_classifier'],
-                        class_num=self.hparams['class_num'],
-                        gamma=self.hparams['gamma'],
-                        box_score_thresh=self.hparams['box_score_thresh'])
-                    )
+
         self.teacher = model_changed_classifier(
             initialize=self.teacher_init,
             reuse_classifier=self.hparams['reuse_classifier'],
@@ -214,8 +204,8 @@ class STAC(pl.LightningModule):
         self.aim_logger = AimLogger(
             experiment=self.hparams['version_name']
         )
-        for gpu in range(len(self.available_gpus)):
-            self.make_teacher_trainer(self.available_gpus[gpu])
+
+        self.make_teacher_trainer()
         self.make_student_trainer()
 
         with open("./train_logits.json", "w+") as jsonFile:
@@ -254,31 +244,26 @@ class STAC(pl.LightningModule):
 
     def load_best_teacher(self):
         checkpoint_name = ''
-        # for ckpt_name in os.listdir(self.save_dir_name_teacher):
-        for ckpt_name in os.listdir(self.__getattribute__('save_dir_name_teacher{}'.format(self.global_rank))):
+        for ckpt_name in os.listdir(self.save_dir_name_teacher):
             if ckpt_name.endswith('ckpt'):
                 checkpoint_name = ckpt_name
                 break
-        checkpoint_path = os.path.join(self.__getattribute__('save_dir_name_teacher{}'.format(self.global_rank)), checkpoint_name)
+        checkpoint_path = os.path.join(self.save_dir_name_teacher, checkpoint_name)
         best_dict = torch.load(checkpoint_path)
         actual_dict = {k[8:]: v for k, v in best_dict['state_dict'].items() if k.startswith('teacher')}
-        self.__getattribute__('save_dir_name_teacher{}'.format(self.global_rank)).load_state_dict(actual_dict)
-        # self.teacher.load_state_dict(actual_dict)
+        self.teacher.load_state_dict(actual_dict)
 
     def copy_student_from_current_teacher(self):
-        # actual_dict = self.teacher.state_dict()
-        actual_dict = self.__getattr__('teacher{}'.format(self.global_rank)).state_dict()
+        actual_dict = self.teacher.state_dict()
         self.student.load_state_dict(actual_dict)
 
     def load_checkpoint_teacher(self, checkpoint_path, skip_last_layer=False):
         checkpoint = torch.load(checkpoint_path)
-        # model_dict = self.teacher.state_dict()
-        model_dict = self.__getattribute__('save_dir_name_teacher{}'.format(self.global_rank)).state_dict()
+        model_dict = self.teacher.state_dict()
         loaded_dict = {k[8:]: v for k, v in checkpoint['state_dict'].items() if k.startswith('teacher')
                        and (('cls_score' not in k and 'bbox_pred' not in k) if skip_last_layer else True)}
         model_dict.update(loaded_dict)
-        # self.teacher.load_state_dict(model_dict)
-        self.__getattribute__('save_dir_name_teacher{}'.format(self.global_rank)).load_state_dict(model_dict)
+        self.teacher.load_state_dict(model_dict)
 
     def load_checkpoint_student(self, checkpoint_path, skip_last_layer=False):
         checkpoint = torch.load(checkpoint_path)
@@ -290,13 +275,15 @@ class STAC(pl.LightningModule):
 
     def test_from_checkpoint(self, checkpoint_path):
         print('Testing with this checkpoint: {}'.format(checkpoint_path))
-        self.load_from_checkpoint(checkpoint_path)
+        # self.load_from_checkpoint(checkpoint_path) # this one returns a new model!!!
+        self.load_checkpoint_teacher(checkpoint_path)
+        self.load_checkpoint_student(checkpoint_path)
 
         self.test()
 
     def test_from_best_checkpoint(self):
         if self.onlyBurnIn:
-            ckpt_path = self.__getattribute__('save_dir_name_teacher{}'.format(self.global_rank))
+            ckpt_path = self.save_dir_name_teacher
         else:
             ckpt_path = self.save_dir_name_student
         
@@ -314,7 +301,7 @@ class STAC(pl.LightningModule):
         }
 
         new_teacher_dict = OrderedDict()
-        for key, value in self.__getattr__('teacher{}'.format(self.global_rank)).state_dict().items():
+        for key, value in self.teacher.state_dict().items():
             if key in student_model_dict.keys():
                 new_teacher_dict[key] = (
                     student_model_dict[key] * (1 - keep_rate) + value * keep_rate
@@ -322,7 +309,7 @@ class STAC(pl.LightningModule):
             else:
                 raise Exception("{} is not found in student model".format(key))
 
-        self.__getattr__('teacher{}'.format(self.global_rank)).load_state_dict(new_teacher_dict)
+        self.teacher.load_state_dict(new_teacher_dict)
         # key = 'roi_heads.box_head.fc6.weight'
         # with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
         #     f.write("After EMA: GR={} key={} max value={}\n".format(
@@ -351,17 +338,17 @@ class STAC(pl.LightningModule):
             self.no_val = True
 
 
-    def make_teacher_trainer(self, gpu):
+    def make_teacher_trainer(self):
         self.t_checkpoint_callback = ModelCheckpoint(
             monitor=None,  # 'val_loss',
-            dirpath=self.__getattribute__('save_dir_name_teacher{}'.format(gpu)),
+            dirpath=self.save_dir_name_teacher,
             filename='{epoch}',
             verbose=True,
             save_last=True,
             period=1
         )
-        setattr(self, 'teacher_trainer{}'.format(gpu), Trainer(
-            gpus=gpu, checkpoint_callback=True, # what is this?
+        self.teacher_trainer = Trainer(
+            gpus=-1, checkpoint_callback=True, # what is this?
             accelerator='ddp',
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
@@ -372,20 +359,7 @@ class STAC(pl.LightningModule):
             max_steps=self.hparams['total_steps_teacher'],
             check_val_every_n_epoch=self.check_val_epochs,
             deterministic=True,
-        ))
-        # self.teacher_trainer = Trainer(
-        #     gpus=-1, checkpoint_callback=True, # what is this?
-        #     accelerator='ddp',
-        #     callbacks=[self.t_checkpoint_callback],
-        #     num_sanity_val_steps=0,
-        #     logger=self.aim_logger,
-        #     log_every_n_steps=10, progress_bar_refresh_rate=1,
-        #     gradient_clip_val=self.hparams['gradient_clip_threshold'],
-        #     min_steps=self.hparams['total_steps_teacher'],
-        #     max_steps=self.hparams['total_steps_teacher'],
-        #     check_val_every_n_epoch=self.check_val_epochs,
-        #     deterministic=True,
-        # )
+        )
         self.teacher_test_trainer = Trainer(
             gpus=1, checkpoint_callback=True,  # what is this?
             callbacks=[self.t_checkpoint_callback],
@@ -411,7 +385,7 @@ class STAC(pl.LightningModule):
         )
 
         self.student_trainer = Trainer(
-            gpus=-1, checkpoint_callback=True,# what is this?
+            gpus=-1, checkpoint_callback=True, # what is this?
             accelerator='ddp',
             callbacks=[checkpoint_callback],
             logger=self.aim_logger,
@@ -469,8 +443,7 @@ class STAC(pl.LightningModule):
 
         target = make_target_from_y(y)
 
-        # y_hat = self.teacher(x, target, image_paths)
-        y_hat = self.__getattr__('teacher{}'.format(self.current_gpu))(x, target, image_paths)
+        y_hat = self.teacher(x, target, image_paths)
 
         with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
             f.write("GR={} images=({})\n".format(
@@ -512,30 +485,8 @@ class STAC(pl.LightningModule):
             augmented_x.append(augment[0])
             augmented_image_paths.append(augment[2])
 
-        for gpu in range(len(self.available_gpus)):
-            checkpoint = torch.load(self.__getattribute__('save_dir_name_teacher{}'.format(self.available_gpus[gpu])) + '/last.ckpt')
-            model_dict = self.teacher.state_dict()
-            loaded_dict = {k[8:]: v for k, v in checkpoint['state_dict'].items() if k.startswith('teacher')}
-            model_dict.update(loaded_dict)
-            self.teacher.load_state_dict(model_dict)
-            self.teacher.eval()
-            self.teacher_pseudo_labels[gpu] = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
-
-        fused_predictions = []
-        pred_values = self.teacher_pseudo_labels.values()
-        for i in range(len(pred_values[0])):
-            boxes_list = []
-            scores_list = []
-            labels_list = []
-            for j in range(len(pred_values)):
-                boxes_list.append(pred_values[j][i]['boxes'])
-                labels_list.append(pred_values[j][i]['labels'])
-                scores_list.append(pred_values[j][i]['scores'])
-            boxes, scores, labels = weighted_boxes_fusion(boxes_list, scores_list, labels_list)
-            fused_pred = {'boxes': boxes, 'labels': labels, 'scores': scores}
-            fused_predictions.append(fused_pred)
-
-        unlab_pred = fused_predictions
+        self.teacher.eval()
+        unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
         # save_image(unlabeled_x[0], 'unlabeled.png')
         # save_image(augmented_x[0], 'augmented.png')
 
@@ -554,10 +505,10 @@ class STAC(pl.LightningModule):
             # calculate stats for this batch
             box_count = 0
             for sample_pred in unlab_pred:
-                labels = sample_pred['labels']
-                scores = sample_pred['scores']
+                labels = sample_pred['labels'].cpu()
+                scores = sample_pred['scores'].cpu()
                 for l, s in zip(labels, scores):
-                    thresholds[int(l)] += s
+                    thresholds[l] += s
                     box_count += 1
             if box_count == 0:
                 thresholds += self.confidence_threshold
@@ -569,15 +520,15 @@ class STAC(pl.LightningModule):
                 f.write(' '.join(["{:.2f}".format(t) for t in thresholds]) + '\n')
 
         for i, sample_pred in enumerate(unlab_pred):
-            boxes = sample_pred['boxes']
-            labels = sample_pred['labels']
-            scores = sample_pred['scores']
+            boxes = sample_pred['boxes'].cpu()
+            labels = sample_pred['labels'].cpu()
+            scores = sample_pred['scores'].cpu()
 
             index = []
             target_boxes = []
             target_labels = []
             for j in range(len(labels)):
-                if scores[j] < thresholds[int(labels[j])]:
+                if scores[j] < thresholds[labels[j]]:
                     index.append(j)
             pseudo_boxes_all += len(boxes)
 
@@ -627,14 +578,12 @@ class STAC(pl.LightningModule):
 
     def teacher_training_step(self, batch_list):
         sup_batch, _ = batch_list
-        self.__getattr__('teacher{}'.format(self.current_gpu)).set_is_supervised(True)
-
-        # self.teacher.set_is_supervised(True)
+        self.teacher.set_is_supervised(True)
         # save_image(sup_batch[0][0], 'image1.png')
 
         sup_loss = self.teacher_supervised_step(sup_batch)
-        loss = self.frcnn_loss(sup_loss)
 
+        loss = self.frcnn_loss(sup_loss)
         self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(sup_loss['loss_box_reg'].item(), name='loss_box_reg',
@@ -644,7 +593,6 @@ class STAC(pl.LightningModule):
         self.logger.experiment.track(sup_loss['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(loss.item(), name='loss_sum', model=self.onTeacher, stage=self.stage)
-
         return {'loss': loss}
 
     def student_training_step(self, batch_list):
@@ -845,8 +793,7 @@ class STAC(pl.LightningModule):
 
     def store_predictions(self):
         if self.onTeacher:
-            # folder = self.save_dir_name_teacher
-            folder = self.__getattribute__('save_dir_name_teacher{}'.format(self.global_rank))
+            folder = self.save_dir_name_teacher
         else:
             folder = self.save_dir_name_student
         filename = os.path.join(folder, "{}_{}.npy".format(self.global_step, self.global_rank))
@@ -951,10 +898,7 @@ class STAC(pl.LightningModule):
             ))
 
             self.validation_counter = 0
-            for gpu in range(len(self.available_gpus)):
-                self.current_gpu = self.available_gpus[gpu]
-                self.__getattribute__('teacher_trainer{}'.format(self.available_gpus[gpu])).fit(self)
-            # self.teacher_trainer.fit(self)
+            self.teacher_trainer.fit(self)
             print("Finished teacher")
 
         # self.load_best_teacher() # TODO I do not think this will always work
@@ -962,8 +906,7 @@ class STAC(pl.LightningModule):
 
         if self.stage != 7:
             self.copy_student_from_current_teacher()
-            # for param in self.teacher.parameters():
-            for param in self.__getattr__('teacher{}'.format(self.current_gpu)).parameters():
+            for param in self.teacher.parameters():
                 param.requires_grad = False
             # opt = self.optimizers()[0]
 
