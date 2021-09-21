@@ -134,7 +134,7 @@ class NoSyncTrainer(Trainer):
         stochastic_weight_avg: bool = False
     ):
         super().__init__()
-        self.train_loop = NoSyncTrainLoop(self)
+        self.train_loop = NoSyncTrainLoop(self, multiple_trainloader_mode)
 
 class NoSyncTrainLoop(TrainLoop):
     def __init__(self, trainer, multiple_trainloader_mode):
