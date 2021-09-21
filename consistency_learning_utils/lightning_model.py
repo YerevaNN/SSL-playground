@@ -6,12 +6,16 @@ import json
 
 import torch
 # torch.use_deterministic_algorithms(True)  # not in this version?
+from pytorch_lightning.utilities import AttributeDict
+
 from .nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
 import torch.optim as optim
 
 from torch import nn
 from collections import OrderedDict
 from pytorch_lightning import Trainer
+from pytorch_lightning.trainer.training_loop import TrainLoop
+
 from torchvision.utils import save_image
 
 from mean_average_precision import MetricBuilder
@@ -64,6 +68,114 @@ class SkipConnection(nn.Module):
         z = self.module(x)
         return torch.cat((x, z), dim=-1)
 
+class NoSyncTrainer(Trainer):
+    def __init__(self):
+        super().__init__()
+        self.train_loop = NoSyncTrainLoop(self)
+
+class NoSyncTrainLoop(TrainLoop):
+    def __init__(self):
+        super.__init__()
+
+    def run_training_batch(self, batch, batch_idx, dataloader_idx):
+        # track grad norms
+        grad_norm_dic = {}
+
+        # bookkeeping
+        self.trainer.hiddens = None
+
+        # track all outputs across time and num of optimizers
+        batch_outputs = [[] for _ in range(len(self.get_optimizers_iterable()))]
+
+        if batch is None:
+            return AttributeDict(signal=0, grad_norm_dic=grad_norm_dic)
+
+        # hook
+        response = self.trainer.call_hook("on_batch_start")
+        if response == -1:
+            return AttributeDict(signal=-1, grad_norm_dic=grad_norm_dic)
+
+        # hook
+        response = self.trainer.call_hook("on_train_batch_start", batch, batch_idx, dataloader_idx)
+        if response == -1:
+            return AttributeDict(signal=-1, grad_norm_dic=grad_norm_dic)
+
+        # lightning module hook
+        splits = self.tbptt_split_batch(batch)
+
+        for split_idx, split_batch in enumerate(splits):
+
+            # create an iterable for optimizers and loop over them
+            for opt_idx, optimizer in self.prepare_optimizers():
+
+                # toggle model params + set info to logger_connector
+                self.run_train_split_start(split_idx, split_batch, opt_idx, optimizer)
+
+                if self.should_accumulate():
+                    # For gradient accumulation
+
+                    # -------------------
+                    # calculate loss (train step + train step end)
+                    # -------------------
+
+                    # automatic_optimization=True: perform dpp sync only when performing optimizer_step
+                    # automatic_optimization=False: don't block synchronization here
+                    with self.block_ddp_sync_behaviour():
+                        self.training_step_and_backward(
+                            split_batch, batch_idx, opt_idx, optimizer, self.trainer.hiddens
+                        )
+
+                    batch_outputs = self._process_closure_result(
+                        batch_outputs=batch_outputs,
+                        opt_idx=opt_idx,
+                    )
+
+                # ------------------------------
+                # BACKWARD PASS
+                # ------------------------------
+                # gradient update with accumulated gradients
+
+                else:
+                    if self.automatic_optimization:
+
+                        def train_step_and_backward_closure():
+                            with self.block_ddp_sync_behaviour(should_block_sync=True):
+                                result = self.training_step_and_backward(
+                                    split_batch, batch_idx, opt_idx, optimizer, self.trainer.hiddens
+                                )
+                            return None if result is None else result.loss
+
+                        # optimizer step
+                        self.optimizer_step(optimizer, opt_idx, batch_idx, train_step_and_backward_closure)
+
+                    else:
+                        self._curr_step_result = self.training_step(
+                            split_batch, batch_idx, opt_idx, self.trainer.hiddens
+                        )
+
+                    if self._curr_step_result is None:
+                        # user decided to skip optimization
+                        # make sure to zero grad.
+                        continue
+
+                    batch_outputs = self._process_closure_result(
+                        batch_outputs=batch_outputs,
+                        opt_idx=opt_idx,
+                    )
+
+                    # todo: Properly aggregate grad_norm accros opt_idx and split_idx
+                    grad_norm_dic = self._cur_grad_norm_dict
+                    self._cur_grad_norm_dict = None
+
+                    # update running loss + reset accumulated loss
+                    self.update_running_loss()
+
+        result = AttributeDict(
+            signal=0,
+            grad_norm_dic=grad_norm_dic,
+            training_step_output_for_epoch_end=batch_outputs,
+        )
+        return result
 
 def model_changed_classifier(reuse_classifier=False, initialize=False, class_num=20, gamma=1, box_score_thresh=0.05):
     """
@@ -347,7 +459,7 @@ class STAC(pl.LightningModule):
             save_last=True,
             period=1
         )
-        self.teacher_trainer = Trainer(
+        self.teacher_trainer = NoSyncTrainer(
             gpus=-1, checkpoint_callback=True, # what is this?
             accelerator='ddp',
             callbacks=[self.t_checkpoint_callback],
