@@ -148,7 +148,7 @@ class NoSyncTrainer(Trainer):
 
 class NoSyncTrainLoop(TrainLoop):
     def __init__(self, trainer, multiple_trainloader_mode):
-        super.__init__(trainer, multiple_trainloader_mode)
+        super().__init__(trainer, multiple_trainloader_mode)
 
     def run_training_batch(self, batch, batch_idx, dataloader_idx):
         # track grad norms
