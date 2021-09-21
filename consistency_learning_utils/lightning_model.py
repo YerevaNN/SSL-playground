@@ -6,6 +6,8 @@ import json
 
 import torch
 # torch.use_deterministic_algorithms(True)  # not in this version?
+from pytorch_lightning.loggers import LightningLoggerBase
+from pytorch_lightning.profiler import BaseProfiler
 from pytorch_lightning.utilities import AttributeDict
 
 from .nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
@@ -13,7 +15,7 @@ import torch.optim as optim
 
 from torch import nn
 from collections import OrderedDict
-from pytorch_lightning import Trainer
+from pytorch_lightning import Trainer, Callback
 from pytorch_lightning.trainer.training_loop import TrainLoop
 
 from torchvision.utils import save_image
@@ -25,6 +27,11 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from aim.pytorch_lightning import AimLogger
 
 from .dataloader import get_train_test_loaders
+
+from typing import Dict, Iterable, List, Optional, Union
+from pytorch_lightning.plugins import Plugin
+from pytorch_lightning.accelerators import Accelerator
+from pathlib import Path
 
 def make_target_from_y(y):
     """
@@ -69,12 +76,68 @@ class SkipConnection(nn.Module):
         return torch.cat((x, z), dim=-1)
 
 class NoSyncTrainer(Trainer):
-    def __init__(self):
+    def __init__(self,
+        logger: Union[LightningLoggerBase, Iterable[LightningLoggerBase], bool] = True,
+        checkpoint_callback: bool = True,
+        callbacks: Optional[Union[List[Callback], Callback]] = None,
+        default_root_dir: Optional[str] = None,
+        gradient_clip_val: float = 0,
+        process_position: int = 0,
+        num_nodes: int = 1,
+        num_processes: int = 1,
+        gpus: Optional[Union[List[int], str, int]] = None,
+        auto_select_gpus: bool = False,
+        tpu_cores: Optional[Union[List[int], str, int]] = None,
+        log_gpu_memory: Optional[str] = None,
+        progress_bar_refresh_rate: Optional[int] = None,
+        overfit_batches: Union[int, float] = 0.0,
+        track_grad_norm: Union[int, float, str] = -1,
+        check_val_every_n_epoch: int = 1,
+        fast_dev_run: Union[int, bool] = False,
+        accumulate_grad_batches: Union[int, Dict[int, int], List[list]] = 1,
+        max_epochs: Optional[int] = None,
+        min_epochs: Optional[int] = None,
+        max_steps: Optional[int] = None,
+        min_steps: Optional[int] = None,
+        limit_train_batches: Union[int, float] = 1.0,
+        limit_val_batches: Union[int, float] = 1.0,
+        limit_test_batches: Union[int, float] = 1.0,
+        limit_predict_batches: Union[int, float] = 1.0,
+        val_check_interval: Union[int, float] = 1.0,
+        flush_logs_every_n_steps: int = 100,
+        log_every_n_steps: int = 50,
+        accelerator: Optional[Union[str, Accelerator]] = None,
+        sync_batchnorm: bool = False,
+        precision: int = 32,
+        weights_summary: Optional[str] = 'top',
+        weights_save_path: Optional[str] = None,
+        num_sanity_val_steps: int = 2,
+        truncated_bptt_steps: Optional[int] = None,
+        resume_from_checkpoint: Optional[Union[Path, str]] = None,
+        profiler: Optional[Union[BaseProfiler, bool, str]] = None,
+        benchmark: bool = False,
+        deterministic: bool = False,
+        reload_dataloaders_every_epoch: bool = False,
+        auto_lr_find: Union[bool, str] = False,
+        replace_sampler_ddp: bool = True,
+        terminate_on_nan: bool = False,
+        auto_scale_batch_size: Union[str, bool] = False,
+        prepare_data_per_node: bool = True,
+        plugins: Optional[Union[Plugin, str, list]] = None,
+        amp_backend: str = 'native',
+        amp_level: str = 'O2',
+        distributed_backend: Optional[str] = None,
+        automatic_optimization: Optional[bool] = None,
+        move_metrics_to_cpu: bool = False,
+        enable_pl_optimizer: bool = None,  # todo: remove in v1.3
+        multiple_trainloader_mode: str = 'max_size_cycle',
+        stochastic_weight_avg: bool = False
+    ):
         super().__init__()
         self.train_loop = NoSyncTrainLoop(self)
 
 class NoSyncTrainLoop(TrainLoop):
-    def __init__(self):
+    def __init__(self, trainer, multiple_trainloader_mode):
         super.__init__()
 
     def run_training_batch(self, batch, batch_idx, dataloader_idx):
