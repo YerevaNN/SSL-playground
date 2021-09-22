@@ -3,7 +3,6 @@ import torch
 import os
 
 from torch.utils.data import Dataset, DataLoader
-from torch.utils.data.distributed import DistributedSampler
 
 from torchvision.transforms import Compose, ToTensor, ToPILImage
 from .helpers.cutout import Cutout
@@ -197,9 +196,8 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
 
     train_dataset = ConcatDataset(train_labelled_ds, train_unlabelled_ds)
 
-    sampler = DistributedSampler(train_dataset, shuffle=False)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, num_workers=num_workers,
-                              pin_memory=pin_memory, collate_fn=voc_collate_fn, shuffle=True, sampler=sampler)
+                              pin_memory=pin_memory, collate_fn=voc_collate_fn, shuffle=True)
 
     test_loader = DataLoader(test_ds, batch_size=batch_size, num_workers=num_workers, pin_memory=pin_memory,
                              shuffle=False, collate_fn=voc_collate_fn)
