@@ -671,7 +671,7 @@ class STAC(pl.LightningModule):
             augmented_x.append(augment[0])
             augmented_image_paths.append(augment[2])
             with open('student_gpu{}.log'.format(self.global_rank), 'a') as f:
-                f.write('global_step{}unlab_path{}aug_path{}'.format(self.global_step, unlab[2], augment[2]))
+                f.write('global_step {} unlab_path {} aug_path {}\n'.format(self.global_step, unlab[2], augment[2]))
 
         self.teacher.eval()
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
