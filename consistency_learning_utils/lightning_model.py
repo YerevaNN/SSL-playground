@@ -1078,7 +1078,7 @@ class STAC(pl.LightningModule):
             self.load_checkpoint_teacher(self.hparams['teacher_init_path'], self.hparams['teacher_init_skip_last_layer'])
 
         if not self.hparams['skip_burn_in']:
-            print("Starting teacher")
+            print("Starting teacher {}".format(self.global_rank))
             self.onTeacher = True
             print("Will train for {} epochs, validate every {} epochs".format(
                 self.hparams['total_steps_teacher'] // self.batches_per_epoch,
@@ -1087,7 +1087,7 @@ class STAC(pl.LightningModule):
 
             self.validation_counter = 0
             self.teacher_trainer.fit(self)
-            print("Finished teacher")
+            print("Finished teacher {}".format(self.global_rank))
 
         # self.load_best_teacher() # TODO I do not think this will always work
         # The best teacher is the last one, as we do not know how to measure what it the best one
