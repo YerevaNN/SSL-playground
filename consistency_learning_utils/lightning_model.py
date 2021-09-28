@@ -360,7 +360,7 @@ class STAC(pl.LightningModule):
         self.onTeacher = True  # as opposed to "on student"
 
         version_folder = os.path.join(self.hparams['phase_folder'], self.hparams['version_name'])
-        self.save_dir_name_teacher = os.path.join(version_folder, 'teacher{}'.format(self.global_rank))
+        self.save_dir_name_teacher = os.path.join(version_folder, 'teacher')
         self.save_dir_name_student = os.path.join(version_folder, 'student')
         self.output_csv = os.path.join(version_folder, 'output.csv')
         print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
@@ -526,7 +526,7 @@ class STAC(pl.LightningModule):
     def make_teacher_trainer(self):
         self.t_checkpoint_callback = ModelCheckpoint(
             monitor=None,  # 'val_loss',
-            dirpath=self.save_dir_name_teacher,
+            dirpath=self.save_dir_name_teacher + '/{}'.format(self.global_rank),
             filename='{epoch}',
             verbose=True,
             save_last=True,
