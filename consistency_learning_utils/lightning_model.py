@@ -33,6 +33,8 @@ from pytorch_lightning.plugins import Plugin
 from pytorch_lightning.accelerators import Accelerator
 from pathlib import Path
 
+from ensemble_boxes import *
+
 def make_target_from_y(y):
     """
     Converts a list of M objects like
@@ -672,11 +674,30 @@ class STAC(pl.LightningModule):
         return unsup_loss
 
     def teacher_training_step(self, batch_list):
-        sup_batch, _ = batch_list
+        sup_batch, unsup_batch = batch_list
         self.teacher.set_is_supervised(True)
         # save_image(sup_batch[0][0], 'image1.png')
 
         sup_loss = self.teacher_supervised_step(sup_batch)
+
+        unlabeled_x, unlabeled_image_paths = [], []
+        augmented_x, augmented_image_paths = [], []
+
+        for i in unsup_batch:
+            unlab, augment = i
+            unlabeled_x.append(unlab[0])
+            unlabeled_image_paths.append(unlab[2])
+            augmented_x.append(augment[0])
+            augmented_image_paths.append(augment[2])
+            with open('student_gpu{}.log'.format(self.global_rank), 'a') as f:
+                f.write('global_step {} unlab_path {} aug_path {}\n'.format(self.global_step, unlab[2], augment[2]))
+
+        self.teacher.eval()
+        unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+        print("image paths {}".format(unlabeled_image_paths))
+        filename = os.path.join(self.save_dir_name_teacher, "{}_{}.npy".format(self.global_step, self.global_rank))
+        os.makedirs(self.save_dir_name_teacher, exist_ok=True)
+        np.save(filename, unlab_pred)
 
         loss = self.frcnn_loss(sup_loss)
         self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
