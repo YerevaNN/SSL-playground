@@ -28,7 +28,7 @@ from aim.pytorch_lightning import AimLogger
 
 from .dataloader import get_train_test_loaders
 
-from typing import Dict, Iterable, List, Optional, Union
+from typing import Dict, Iterable, List, Optional, Union, Any
 from pytorch_lightning.plugins import Plugin
 from pytorch_lightning.accelerators import Accelerator
 from pathlib import Path
@@ -694,7 +694,7 @@ class STAC(pl.LightningModule):
         return unsup_loss
 
     def teacher_training_step(self, batch_list):
-        sup_batch, unsup_batch = batch_list
+        sup_batch, _ = batch_list
         self.teacher.set_is_supervised(True)
         # save_image(sup_batch[0][0], 'image1.png')
 
@@ -710,8 +710,6 @@ class STAC(pl.LightningModule):
         self.logger.experiment.track(sup_loss['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(loss.item(), name='loss_sum', model=self.onTeacher, stage=self.stage)
-
-        unsup_loss = self.teacher_unsupervised_step(unsup_batch)
 
         return {'loss': loss}
 
@@ -764,6 +762,10 @@ class STAC(pl.LightningModule):
             return self.teacher_training_step(batch_list)
         else:
             return self.student_training_step(batch_list)
+
+    def training_epoch_end(self, outputs: List[Any]) -> None:
+        if self.global_step == self.hparams['total_steps_teacher'] - 1:
+            torch.save(self.teacher, self.save_dir_name_teacher + '/{}'.format(self.global_rank))
 
     # @pl.data_loader
     def test_dataloader(self):
