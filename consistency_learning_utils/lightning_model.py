@@ -698,7 +698,6 @@ class STAC(pl.LightningModule):
         self.teacher.set_is_supervised(True)
         # save_image(sup_batch[0][0], 'image1.png')
 
-        unsup_loss = self.teacher_unsupervised_step(unsup_batch)
         sup_loss = self.teacher_supervised_step(sup_batch)
 
         loss = self.frcnn_loss(sup_loss)
@@ -711,6 +710,9 @@ class STAC(pl.LightningModule):
         self.logger.experiment.track(sup_loss['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(loss.item(), name='loss_sum', model=self.onTeacher, stage=self.stage)
+
+        unsup_loss = self.teacher_unsupervised_step(unsup_batch)
+
         return {'loss': loss}
 
     def student_training_step(self, batch_list):
