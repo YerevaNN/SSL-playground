@@ -678,8 +678,6 @@ class STAC(pl.LightningModule):
         self.teacher.set_is_supervised(True)
         # save_image(sup_batch[0][0], 'image1.png')
 
-        sup_loss = self.teacher_supervised_step(sup_batch)
-
         unlabeled_x, unlabeled_image_paths = [], []
         augmented_x, augmented_image_paths = [], []
 
@@ -698,6 +696,8 @@ class STAC(pl.LightningModule):
         filename = os.path.join(self.save_dir_name_teacher, "{}_{}.npy".format(self.global_step, self.global_rank))
         os.makedirs(self.save_dir_name_teacher, exist_ok=True)
         np.save(filename, unlab_pred)
+
+        sup_loss = self.teacher_supervised_step(sup_batch)
 
         loss = self.frcnn_loss(sup_loss)
         self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
