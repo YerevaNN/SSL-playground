@@ -545,6 +545,26 @@ class STAC(pl.LightningModule):
                 self.global_rank, ' '.join([os.path.basename(i[2]) for i in sup_batch])))
         return y_hat
 
+    def teacher_unsupervised_step(self, unsup_batch):
+        unlabeled_x, unlabeled_image_paths = [], []
+        augmented_x, augmented_image_paths = [], []
+
+        for i in unsup_batch:
+            unlab, augment = i
+            unlabeled_x.append(unlab[0])
+            unlabeled_image_paths.append(unlab[2])
+            augmented_x.append(augment[0])
+            augmented_image_paths.append(augment[2])
+            with open('student_gpu{}.log'.format(self.global_rank), 'a') as f:
+                f.write('global_step {} unlab_path {} aug_path {}\n'.format(self.global_step, unlab[2], augment[2]))
+
+        self.teacher.eval()
+        unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+        print("image paths {}".format(unlabeled_image_paths))
+        filename = os.path.join(self.save_dir_name_teacher, "{}_{}.npy".format(self.global_step, self.global_rank))
+        os.makedirs(self.save_dir_name_teacher, exist_ok=True)
+        np.save(filename, unlab_pred)
+
     def student_supervised_step(self, sup_batch):
         if self.hparams['augmentation'] == 3:
             x, y, image_paths = [], [], []
@@ -678,25 +698,7 @@ class STAC(pl.LightningModule):
         self.teacher.set_is_supervised(True)
         # save_image(sup_batch[0][0], 'image1.png')
 
-        unlabeled_x, unlabeled_image_paths = [], []
-        augmented_x, augmented_image_paths = [], []
-
-        for i in unsup_batch:
-            unlab, augment = i
-            unlabeled_x.append(unlab[0])
-            unlabeled_image_paths.append(unlab[2])
-            augmented_x.append(augment[0])
-            augmented_image_paths.append(augment[2])
-            with open('student_gpu{}.log'.format(self.global_rank), 'a') as f:
-                f.write('global_step {} unlab_path {} aug_path {}\n'.format(self.global_step, unlab[2], augment[2]))
-
-        self.teacher.eval()
-        unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
-        print("image paths {}".format(unlabeled_image_paths))
-        filename = os.path.join(self.save_dir_name_teacher, "{}_{}.npy".format(self.global_step, self.global_rank))
-        os.makedirs(self.save_dir_name_teacher, exist_ok=True)
-        np.save(filename, unlab_pred)
-
+        self.teacher_unsupervised_step(unsup_batch)
         sup_loss = self.teacher_supervised_step(sup_batch)
 
         loss = self.frcnn_loss(sup_loss)
