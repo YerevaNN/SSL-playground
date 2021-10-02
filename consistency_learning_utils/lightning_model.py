@@ -1,6 +1,8 @@
 from argparse import Namespace
 import os
 import csv
+from fnmatch import fnmatch
+
 import numpy as np
 import json
 
@@ -601,6 +603,12 @@ class STAC(pl.LightningModule):
             augmented_image_paths.append(augment[2])
             with open('student_gpu{}.log'.format(self.global_rank), 'a') as f:
                 f.write('global_step {} unlab_path {} aug_path {}\n'.format(self.global_step, unlab[2], augment[2]))
+        pattern = "last"
+        for path, subdirs, files in os.walk(self.save_dir_name_teacher):
+            for name in files:
+                if fnmatch(name, pattern):
+                    print(name)
+                    checkpoint_path = os.path.join(path, name)
 
         self.teacher.eval()
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
