@@ -603,11 +603,15 @@ class STAC(pl.LightningModule):
             augmented_image_paths.append(augment[2])
             with open('student_gpu{}.log'.format(self.global_rank), 'a') as f:
                 f.write('global_step {} unlab_path {} aug_path {}\n'.format(self.global_step, unlab[2], augment[2]))
-        pattern = "last"
+
         for path, subdirs, files in os.walk(self.save_dir_name_teacher):
             for file in files:
                 if 'last' in file and file != 'last.ckpt':
-                    print(file)
+                    checkpoint_path = os.path.join(path, file)
+                    teacher_model = self.load_best_teacher(checkpoint_path)
+                    pseudo_lab = teacher_model(unlabeled_x, unlabeled_image_paths)
+                    print(pseudo_lab)
+
         self.teacher.eval()
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
         # save_image(unlabeled_x[0], 'unlabeled.png')
