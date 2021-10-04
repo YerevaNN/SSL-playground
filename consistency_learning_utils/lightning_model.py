@@ -31,13 +31,12 @@ from aim.pytorch_lightning import AimLogger
 
 from .dataloader import get_train_test_loaders
 
-from typing import Dict, Iterable, List, Optional, Union, Any
-from pytorch_lightning.plugins import Plugin, NativeMixedPrecisionPlugin
+from typing import List, Optional, Any
+from pytorch_lightning.plugins import NativeMixedPrecisionPlugin
 from pytorch_lightning.accelerators import Accelerator
 from pathlib import Path
 
 from pytorch_lightning.plugins.training_type.ddp import DDPPlugin
-from pytorch_lightning.accelerators import GPUAccelerator
 
 from ensemble_boxes import *
 
@@ -84,6 +83,7 @@ class SkipConnection(nn.Module):
         return torch.cat((x, z), dim=-1)
 
 class NoGradSyncDDP(DDPPlugin):
+
     def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
         """Perform a all_gather on all processes """
         pass
@@ -228,7 +228,7 @@ class STAC(pl.LightningModule):
             experiment=self.hparams['version_name']
         )
 
-        self.accelerator = GPUAccelerator(
+        self.accelerator = Accelerator(
             precision_plugin=NativeMixedPrecisionPlugin(),
             training_type_plugin=NoGradSyncDDP(),
         )
