@@ -33,7 +33,7 @@ from .dataloader import get_train_test_loaders
 
 from typing import List, Optional, Any
 from pytorch_lightning.plugins import NativeMixedPrecisionPlugin
-from pytorch_lightning.accelerators import Accelerator
+from pytorch_lightning.accelerators import Accelerator, GPUAccelerator
 from pathlib import Path
 
 from pytorch_lightning.plugins.training_type.ddp import DDPPlugin
@@ -229,7 +229,7 @@ class STAC(pl.LightningModule):
             experiment=self.hparams['version_name']
         )
 
-        self.accelerator = Accelerator(
+        self.accelerator = GPUAccelerator(
             precision_plugin=NativeMixedPrecisionPlugin(),
             training_type_plugin=NoGradSyncDDP(),
         )
