@@ -361,6 +361,14 @@ class STAC(pl.LightningModule):
         model_dict.update(loaded_dict)
         self.teacher.load_state_dict(model_dict)
 
+    def load_teacher(self, checkpoint_path, skip_last_layer=False):
+        checkpoint = torch.load(checkpoint_path)
+        model_dict = self.teacher.state_dict()
+        # loaded_dict = {k[8:]: v for k, v in checkpoint['state_dict'].items() if k.startswith('teacher')
+        #                and (('cls_score' not in k and 'bbox_pred' not in k) if skip_last_layer else True)}
+        model_dict.update(checkpoint)
+        self.teacher.load_state_dict(model_dict)
+
     def load_checkpoint_student(self, checkpoint_path, skip_last_layer=False):
         checkpoint = torch.load(checkpoint_path)
         model_dict = self.student.state_dict()
@@ -608,8 +616,7 @@ class STAC(pl.LightningModule):
             for file in files:
                 if 'last' in file and file != 'last.ckpt':
                     checkpoint_path = os.path.join(path, file)
-                    checkpoint = torch.load(checkpoint_path)
-                    self.teacher.load_state_dict(checkpoint)
+                    self.load_teacher(checkpoint_path)
                     self.teacher.eval()
                     unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
                     print(unlab_pred)
