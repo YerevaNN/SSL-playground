@@ -609,7 +609,6 @@ class STAC(pl.LightningModule):
                 if 'last' in file and file != 'last.ckpt':
                     checkpoint_path = os.path.join(path, file)
                     checkpoint = torch.load(checkpoint_path)
-                    teacher_model = self.load_checkpoint_teacher(checkpoint_path)
                     self.teacher.load_state_dict(checkpoint)
                     self.teacher.eval()
                     unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
