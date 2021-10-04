@@ -9,6 +9,7 @@ import json
 import torch
 # torch.use_deterministic_algorithms(True)  # not in this version?
 from pytorch_lightning.loggers import LightningLoggerBase
+from pytorch_lightning.plugins.environments import ClusterEnvironment
 from pytorch_lightning.profiler import BaseProfiler
 from pytorch_lightning.utilities import AttributeDict
 
@@ -83,6 +84,17 @@ class SkipConnection(nn.Module):
         return torch.cat((x, z), dim=-1)
 
 class NoGradSyncDDP(DDPPlugin):
+    def __init__(
+        self,
+        parallel_devices: Optional[List[torch.device]] = None,
+        num_nodes: int = 1,
+        cluster_environment: ClusterEnvironment = None,
+        sync_batchnorm: bool = False,
+        **kwargs: Union[Any, Dict[str, Any]],
+    ) -> None:
+        super().__init__(parallel_devices=parallel_devices, num_nodes=num_nodes, cluster_environment=cluster_environment,
+                         sync_batchnorm=sync_batchnorm, kwargs=kwargs)
+
     def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
         """Perform a all_gather on all processes """
         pass
