@@ -82,6 +82,9 @@ class SkipConnection(nn.Module):
 class NoGradSyncDDP(DDPPlugin):
     distributed_backend = "ddp"
 
+    def configure_ddp(self):
+        super().configure_ddp()
+
     def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
         print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
         """Perform a all_gather on all processes """
@@ -401,8 +404,7 @@ class STAC(pl.LightningModule):
             min_steps=self.hparams['total_steps_teacher'],
             max_steps=self.hparams['total_steps_teacher'],
             check_val_every_n_epoch=self.check_val_epochs,
-            deterministic=True,
-            automatic_optimization=False
+            deterministic=True
         )
         self.teacher_test_trainer = Trainer(
             gpus=1, checkpoint_callback=True,  # what is this?
