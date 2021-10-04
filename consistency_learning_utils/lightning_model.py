@@ -1,7 +1,6 @@
 from argparse import Namespace
 import os
 import csv
-from fnmatch import fnmatch
 
 import numpy as np
 import json
@@ -9,7 +8,6 @@ import json
 import torch
 # torch.use_deterministic_algorithms(True)  # not in this version?
 from pytorch_lightning.loggers import LightningLoggerBase
-from pytorch_lightning.plugins.environments import ClusterEnvironment
 from pytorch_lightning.profiler import BaseProfiler
 from pytorch_lightning.utilities import AttributeDict
 
@@ -18,8 +16,7 @@ import torch.optim as optim
 
 from torch import nn
 from collections import OrderedDict
-from pytorch_lightning import Trainer, Callback
-from pytorch_lightning.trainer.training_loop import TrainLoop
+from pytorch_lightning import Trainer
 
 from torchvision.utils import save_image
 
@@ -32,8 +29,6 @@ from aim.pytorch_lightning import AimLogger
 from .dataloader import get_train_test_loaders
 
 from typing import List, Optional, Any
-from pytorch_lightning.plugins import NativeMixedPrecisionPlugin
-from pytorch_lightning.accelerators import Accelerator, GPUAccelerator
 from pathlib import Path
 
 from pytorch_lightning.plugins.training_type.ddp import DDPPlugin
@@ -228,11 +223,6 @@ class STAC(pl.LightningModule):
         self.aim_logger = AimLogger(
             experiment=self.hparams['version_name']
         )
-
-        self.accelerator = GPUAccelerator(
-            precision_plugin=NativeMixedPrecisionPlugin(),
-            training_type_plugin=DDPPlugin(),
-        )
         self.make_teacher_trainer()
         self.make_student_trainer()
 
@@ -385,7 +375,7 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
-            accelerator='ddp',
+            # accelerator='ddp',
             plugins=NoGradSyncDDP(),
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
@@ -694,9 +684,9 @@ class STAC(pl.LightningModule):
         else:
             return self.student_training_step(batch_list)
 
-    def training_epoch_end(self, outputs: List[Any]) -> None:
-        if self.global_step == self.hparams['total_steps_teacher'] - 1:
-            torch.save(self.teacher.state_dict(), self.save_dir_name_teacher + '/last{}.ckpt'.format(self.global_rank))
+    # def training_epoch_end(self, outputs: List[Any]) -> None:
+    #     if self.global_step == self.hparams['total_steps_teacher'] - 1:
+    #         torch.save(self.teacher.state_dict(), self.save_dir_name_teacher + '/last{}.ckpt'.format(self.global_rank))
 
     # @pl.data_loader
     def test_dataloader(self):
