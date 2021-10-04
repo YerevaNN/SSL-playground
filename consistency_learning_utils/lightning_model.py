@@ -402,6 +402,7 @@ class STAC(pl.LightningModule):
             max_steps=self.hparams['total_steps_teacher'],
             check_val_every_n_epoch=self.check_val_epochs,
             deterministic=True,
+            automatic_optimization=False
         )
         self.teacher_test_trainer = Trainer(
             gpus=1, checkpoint_callback=True,  # what is this?
