@@ -231,7 +231,7 @@ class STAC(pl.LightningModule):
 
         self.accelerator = GPUAccelerator(
             precision_plugin=NativeMixedPrecisionPlugin(),
-            training_type_plugin=NoGradSyncDDP(),
+            training_type_plugin=DDPPlugin(),
         )
         self.make_teacher_trainer()
         self.make_student_trainer()
