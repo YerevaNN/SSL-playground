@@ -83,9 +83,6 @@ class SkipConnection(nn.Module):
         return torch.cat((x, z), dim=-1)
 
 class NoGradSyncDDP(DDPPlugin):
-    def __init__(self):
-        super.__init__()
-
     def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
         """Perform a all_gather on all processes """
         pass
