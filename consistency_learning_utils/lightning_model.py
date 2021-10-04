@@ -31,7 +31,7 @@ from aim.pytorch_lightning import AimLogger
 from .dataloader import get_train_test_loaders
 
 from typing import Dict, Iterable, List, Optional, Union, Any
-from pytorch_lightning.plugins import Plugin
+from pytorch_lightning.plugins import Plugin, NativeMixedPrecisionPlugin
 from pytorch_lightning.accelerators import Accelerator
 from pathlib import Path
 
@@ -228,6 +228,7 @@ class STAC(pl.LightningModule):
         )
 
         self.accelerator = GPUAccelerator(
+            precision_plugin=NativeMixedPrecisionPlugin(),
             training_type_plugin=NoGradSyncDDP(),
         )
         self.make_teacher_trainer()
