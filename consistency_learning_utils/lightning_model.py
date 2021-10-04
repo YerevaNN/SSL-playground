@@ -87,7 +87,7 @@ class NoGradSyncDDP(DDPPlugin):
     def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
         """Perform a all_gather on all processes """
         print("sync_grads", sync_grads)
-        super().all_gather(tensor, group, sync_grads)
+        super().all_gather(tensor=tensor, group=group, sync_grads=False)
 
 def model_changed_classifier(reuse_classifier=False, initialize=False, class_num=20, gamma=1, box_score_thresh=0.05):
     """
@@ -385,7 +385,7 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
-            # accelerator='ddp',
+            accelerator='ddp',
             plugins=NoGradSyncDDP(),
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
@@ -487,26 +487,6 @@ class STAC(pl.LightningModule):
                 self.global_rank, ' '.join([os.path.basename(i[2]) for i in sup_batch])))
         return y_hat
 
-    def teacher_unsupervised_step(self, unsup_batch):
-        unlabeled_x, unlabeled_image_paths = [], []
-        augmented_x, augmented_image_paths = [], []
-
-        for i in unsup_batch:
-            unlab, augment = i
-            unlabeled_x.append(unlab[0])
-            unlabeled_image_paths.append(unlab[2])
-            augmented_x.append(augment[0])
-            augmented_image_paths.append(augment[2])
-            with open('student_gpu{}.log'.format(self.global_rank), 'a') as f:
-                f.write('global_step {} unlab_path {} aug_path {}\n'.format(self.global_step, unlab[2], augment[2]))
-
-        self.teacher.eval()
-        unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
-        print("image paths {}".format(unlabeled_image_paths))
-        filename = os.path.join(self.save_dir_name_teacher, "{}_{}.npy".format(self.global_step, self.global_rank))
-        os.makedirs(self.save_dir_name_teacher, exist_ok=True)
-        np.save(filename, unlab_pred)
-
     def student_supervised_step(self, sup_batch):
         if self.hparams['augmentation'] == 3:
             x, y, image_paths = [], [], []
@@ -541,21 +521,21 @@ class STAC(pl.LightningModule):
             unlabeled_image_paths.append(unlab[2])
             augmented_x.append(augment[0])
             augmented_image_paths.append(augment[2])
-            with open('student_gpu{}.log'.format(self.global_rank), 'a') as f:
-                f.write('global_step {} unlab_path {} aug_path {}\n'.format(self.global_step, unlab[2], augment[2]))
+        #     with open('student_gpu{}.log'.format(self.global_rank), 'a') as f:
+        #         f.write('global_step {} unlab_path {} aug_path {}\n'.format(self.global_step, unlab[2], augment[2]))
+        #
+        # for path, subdirs, files in os.walk(self.save_dir_name_teacher):
+        #     for file in files:
+        #         if 'last' in file and file != 'last.ckpt':
+        #             checkpoint_path = os.path.join(path, file)
+        #             self.load_teacher(checkpoint_path)
+        #             self.teacher.eval()
+        #             unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+        #             print(unlab_pred)
 
-        for path, subdirs, files in os.walk(self.save_dir_name_teacher):
-            for file in files:
-                if 'last' in file and file != 'last.ckpt':
-                    checkpoint_path = os.path.join(path, file)
-                    self.load_teacher(checkpoint_path)
-                    self.teacher.eval()
-                    unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
-                    print(unlab_pred)
-
-        # self.teacher.eval()
-        # unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
-        # save_image(unlabeled_x[0], 'unlabeled.png')
+        self.teacher.eval()
+        unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+        save_image(unlabeled_x[0], 'unlabeled.png')
         # save_image(augmented_x[0], 'augmented.png')
 
         to_train = False
