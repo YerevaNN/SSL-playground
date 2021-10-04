@@ -80,6 +80,7 @@ class SkipConnection(nn.Module):
 class NoGradSyncDDP(DDPPlugin):
 
     def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
+        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
         """Perform a all_gather on all processes """
         print("sync_grads", sync_grads)
         super().all_gather(tensor=tensor, group=group, sync_grads=False)
@@ -643,10 +644,10 @@ class STAC(pl.LightningModule):
 
         self.student.set_is_supervised(False)
 
-        unsup_loss = self.student_unsupervised_step(unsup_batch)
+        # unsup_loss = self.student_unsupervised_step(unsup_batch)
 
         sup_loss = self.frcnn_loss(sup_y_hat)
-        loss = sup_loss + self.lam * unsup_loss
+        loss = sup_loss #+ self.lam * unsup_loss
         with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
             f.write("GR={} loss={:.6f}\n".format(self.global_rank, loss))
 
@@ -672,8 +673,8 @@ class STAC(pl.LightningModule):
                                          model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(sup_loss.item(), name='training_sup_loss',
                                          model=self.onTeacher, stage=self.stage)
-        self.logger.experiment.track(unsup_loss.item(), name='training_unsup_loss',
-                                         model=self.onTeacher, stage=self.stage)
+        # self.logger.experiment.track(unsup_loss.item(), name='training_unsup_loss',
+        #                                  model=self.onTeacher, stage=self.stage)
         self.logger.experiment.track(loss.item(), name='loss_sum',
                                          model=self.onTeacher, stage=self.stage)
         return {'loss': loss}
