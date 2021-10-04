@@ -9,7 +9,7 @@ import torch
 # torch.use_deterministic_algorithms(True)  # not in this version?
 from pytorch_lightning.accelerators import GPUAccelerator
 from pytorch_lightning.loggers import LightningLoggerBase
-from pytorch_lightning.plugins import NativeMixedPrecisionPlugin
+from pytorch_lightning.plugins import NativeMixedPrecisionPlugin, PrecisionPlugin
 from pytorch_lightning.profiler import BaseProfiler
 from pytorch_lightning.utilities import AttributeDict
 
@@ -87,6 +87,15 @@ class NoGradSyncDDP(DDPPlugin):
         """Perform a all_gather on all processes """
         print("sync_grads", sync_grads)
         super().all_gather(tensor=tensor, group=group, sync_grads=False)
+
+class CustomAccelerator(GPUAccelerator):
+    def __init__(
+            self,
+            precision_plugin: PrecisionPlugin,
+            training_type_plugin: NoGradSyncDDP,
+    ) -> None:
+        super().__init__(PrecisionPlugin, NoGradSyncDDP)
+
 
 def model_changed_classifier(reuse_classifier=False, initialize=False, class_num=20, gamma=1, box_score_thresh=0.05):
     """
@@ -227,7 +236,7 @@ class STAC(pl.LightningModule):
         self.aim_logger = AimLogger(
             experiment=self.hparams['version_name']
         )
-        self.accelerator = GPUAccelerator(
+        self.accelerator = CustomAccelerator(
             training_type_plugin=NoGradSyncDDP(),
             precision_plugin=NativeMixedPrecisionPlugin()
         )
@@ -383,7 +392,6 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
-            # plugins=NoGradSyncDDP(),
             accelerator=self.accelerator,
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
