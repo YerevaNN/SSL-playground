@@ -387,7 +387,7 @@ class STAC(pl.LightningModule):
             gpus=-1, checkpoint_callback=True, # what is this?
             accelerator=GPUAccelerator(
             precision_plugin=NativeMixedPrecisionPlugin(),
-            training_type_plugin=NoGradSyncDDP(),
+            training_type_plugin=DDPPlugin(),
         ),
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
