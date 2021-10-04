@@ -608,7 +608,7 @@ class STAC(pl.LightningModule):
             for file in files:
                 if 'last' in file and file != 'last.ckpt':
                     checkpoint_path = os.path.join(path, file)
-                    teacher_model = self.load_best_teacher(checkpoint_path)
+                    teacher_model = self.load_checkpoint_teacher(checkpoint_path)
                     pseudo_lab = teacher_model(unlabeled_x, unlabeled_image_paths)
                     print(pseudo_lab)
 
