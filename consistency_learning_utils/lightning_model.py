@@ -90,10 +90,9 @@ class NoGradSyncDDP(DDPPlugin):
         return self.parallel_devices[self.local_rank]
     def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
         """Perform a all_gather on all processes """
-        print('all_gatehr$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$')
-        # with open('all_gather{}.log'.format(self.global_rank), 'a') as f:
-        #     f.write(sync_grads)
-        # super().all_gather(tensor=tensor, group=group, sync_grads=False)
+        with open('all_gather{}.log'.format(self.global_rank), 'a') as f:
+            f.write(sync_grads)
+        super().all_gather(tensor=tensor, group=group, sync_grads=False)
 
 
 def model_changed_classifier(reuse_classifier=False, initialize=False, class_num=20, gamma=1, box_score_thresh=0.05):
@@ -391,7 +390,7 @@ class STAC(pl.LightningModule):
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
             plugins=[NoGradSyncDDP(), PrecisionPlugin()],
-            # accelerator=self.accelerator,
+            accelerator=self.accelerator,
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
             logger=self.aim_logger,
