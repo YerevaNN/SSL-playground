@@ -262,15 +262,6 @@ class STAC(pl.LightningModule):
         self.validation_teacher_boxes = 0
         self.validation_images = 0
 
-    def all_gather(
-        self,
-        data: Union[torch.Tensor, Dict, List, Tuple],
-        group: Optional[Any] = None,
-        sync_grads: bool = False,
-    ):
-        self.trainer.accelerator.all_gather = NoGradSyncDDP.all_gather()
-        super().all_gather(data, group, sync_grads)
-
     def set_test_with_student(self, val1, val2):
         self.testWithStudent = val1
         self.onlyBurnIn = val2
@@ -400,7 +391,7 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
-            # distributed_backend="ddp",
+            distributed_backend="ddp",
             plugins=[NoGradSyncDDP()],
             # accelerator=self.accelerator,
             callbacks=[self.t_checkpoint_callback],
