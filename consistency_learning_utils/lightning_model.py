@@ -94,6 +94,13 @@ class NoGradSyncDDP(DDPPlugin):
             f.write(sync_grads)
         super().all_gather(tensor=tensor, group=group, sync_grads=False)
 
+class CustomAccelerator(Accelerator):
+    def __init__(
+            self,
+            precision_plugin: PrecisionPlugin,
+            training_type_plugin: NoGradSyncDDP,
+    ) -> None:
+        super().__init__(precision_plugin, training_type_plugin)
 
 def model_changed_classifier(reuse_classifier=False, initialize=False, class_num=20, gamma=1, box_score_thresh=0.05):
     """
@@ -389,10 +396,7 @@ class STAC(pl.LightningModule):
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
             # plugins=[NoGradSyncDDP(), PrecisionPlugin()],
-            accelerator=Accelerator(
-            precision_plugin=PrecisionPlugin(),
-            training_type_plugin=NoGradSyncDDP()
-        ),
+            accelerator=CustomAccelerator(),
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
             logger=self.aim_logger,
