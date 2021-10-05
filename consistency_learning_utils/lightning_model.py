@@ -9,6 +9,7 @@ import torch
 # torch.use_deterministic_algorithms(True)  # not in this version?
 from pytorch_lightning.accelerators import GPUAccelerator, Accelerator
 from pytorch_lightning.loggers import LightningLoggerBase
+from pytorch_lightning.overrides import LightningDistributedModule
 from pytorch_lightning.plugins import NativeMixedPrecisionPlugin, PrecisionPlugin
 from pytorch_lightning.profiler import BaseProfiler
 from pytorch_lightning.utilities import AttributeDict
@@ -34,6 +35,7 @@ from typing import List, Optional, Any, Union, Dict, Tuple
 from pathlib import Path
 
 from pytorch_lightning.plugins.training_type.ddp import DDPPlugin
+from torch.nn.parallel.distributed import DistributedDataParallel
 
 from ensemble_boxes import *
 
@@ -82,8 +84,14 @@ class SkipConnection(nn.Module):
 class NoGradSyncDDP(DDPPlugin):
 
     def configure_ddp(self):
-        super().configure_ddp()
-        
+        self.pre_configure_ddp()
+        self._model = DistributedDataParallel(
+            LightningDistributedModule(self.model),
+            device_ids=self.determine_ddp_device_ids(),
+            **self._ddp_kwargs,
+        )
+
+
     def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
         """Perform a all_gather on all processes """
         with open('all_gather{}.log'.format(self.global_rank), 'a') as f:
