@@ -80,10 +80,6 @@ class SkipConnection(nn.Module):
         return torch.cat((x, z), dim=-1)
 
 class NoGradSyncDDP(DDPPlugin):
-    distributed_backend = "ddp"
-
-    def configure_ddp(self):
-        super().configure_ddp()
 
     def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
         print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
@@ -97,7 +93,7 @@ class CustomAccelerator(GPUAccelerator):
             precision_plugin: PrecisionPlugin,
             training_type_plugin: NoGradSyncDDP,
     ) -> None:
-        super().__init__(PrecisionPlugin, NoGradSyncDDP)
+        super().__init__(PrecisionPlugin(), NoGradSyncDDP())
 
 
 def model_changed_classifier(reuse_classifier=False, initialize=False, class_num=20, gamma=1, box_score_thresh=0.05):
@@ -395,7 +391,8 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
-            plugins=[NoGradSyncDDP(), PrecisionPlugin()],
+            distributed_backend="ddp",
+            plugins=[NoGradSyncDDP()],
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
             logger=self.aim_logger,
