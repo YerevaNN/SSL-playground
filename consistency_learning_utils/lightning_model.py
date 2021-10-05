@@ -84,25 +84,16 @@ class SkipConnection(nn.Module):
 
 class NoGradSyncDDP(DDPPlugin):
 
-    def __init__(
-        self,
-        parallel_devices: Optional[List[torch.device]] = None,
-        num_nodes: int = 1,
-        cluster_environment: ClusterEnvironment = None,
-        sync_batchnorm: bool = False,
-        **kwargs: Union[Any, Dict[str, Any]],
-    ) -> None:
-        print("init custom plugin")
-        super().__init__(parallel_devices, num_nodes, cluster_environment, sync_batchnorm)
     @property
     def root_device(self):
         print('root device', self.parallel_devices[self.local_rank])
         return self.parallel_devices[self.local_rank]
     def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
         """Perform a all_gather on all processes """
-        with open('all_gather{}.log'.format(self.global_rank), 'a') as f:
-            f.write(sync_grads)
-        super().all_gather(tensor=tensor, group=group, sync_grads=False)
+        print('all_gatehr$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$')
+        # with open('all_gather{}.log'.format(self.global_rank), 'a') as f:
+        #     f.write(sync_grads)
+        # super().all_gather(tensor=tensor, group=group, sync_grads=False)
 
 
 def model_changed_classifier(reuse_classifier=False, initialize=False, class_num=20, gamma=1, box_score_thresh=0.05):
