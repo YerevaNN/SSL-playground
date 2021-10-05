@@ -11,6 +11,7 @@ from pytorch_lightning.accelerators import GPUAccelerator, Accelerator
 from pytorch_lightning.loggers import LightningLoggerBase
 from pytorch_lightning.overrides import LightningDistributedModule
 from pytorch_lightning.plugins import NativeMixedPrecisionPlugin, PrecisionPlugin
+from pytorch_lightning.plugins.environments import ClusterEnvironment
 from pytorch_lightning.profiler import BaseProfiler
 from pytorch_lightning.utilities import AttributeDict
 
@@ -83,14 +84,16 @@ class SkipConnection(nn.Module):
 
 class NoGradSyncDDP(DDPPlugin):
 
-    def configure_ddp(self):
-        self.pre_configure_ddp()
-        self._model = DistributedDataParallel(
-            LightningDistributedModule(self.model),
-            device_ids=self.determine_ddp_device_ids(),
-            **self._ddp_kwargs,
-        )
-
+    def __init__(
+        self,
+        parallel_devices: Optional[List[torch.device]] = None,
+        num_nodes: int = 1,
+        cluster_environment: ClusterEnvironment = None,
+        sync_batchnorm: bool = False,
+        **kwargs: Union[Any, Dict[str, Any]],
+    ) -> None:
+        print("init custom plugin")
+        super().__init__(parallel_devices, num_nodes, cluster_environment, sync_batchnorm, kwargs)
 
     def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
         """Perform a all_gather on all processes """
@@ -393,7 +396,7 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
-            accelerator=self.accelerator,
+            plugins=[NoGradSyncDDP(), PrecisionPlugin()],
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
             logger=self.aim_logger,
