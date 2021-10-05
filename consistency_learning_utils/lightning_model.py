@@ -213,7 +213,6 @@ class STAC(pl.LightningModule):
         ))
         self.teacher_init = 'full' if (self.hparams['teacher_init_path'] and (not self.hparams['skip_burn_in'])) else \
             self.hparams['initialization']
-
         self.teacher = model_changed_classifier(
             initialize=self.teacher_init,
             reuse_classifier=self.hparams['reuse_classifier'],
@@ -389,8 +388,11 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
-            plugins=[NoGradSyncDDP(), PrecisionPlugin()],
-            accelerator=self.accelerator,
+            # plugins=[NoGradSyncDDP(), PrecisionPlugin()],
+            accelerator=Accelerator(
+            precision_plugin=PrecisionPlugin(),
+            training_type_plugin=NoGradSyncDDP()
+        ),
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
             logger=self.aim_logger,
