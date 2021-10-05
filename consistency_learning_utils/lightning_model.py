@@ -82,9 +82,9 @@ class SkipConnection(nn.Module):
 class NoGradSyncDDP(DDPPlugin):
 
     def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
-        print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$")
         """Perform a all_gather on all processes """
-        print("sync_grads", sync_grads)
+        with open('all_gather{}.log'.format(self.global_rank), 'a') as f:
+            f.write(sync_grads)
         super().all_gather(tensor=tensor, group=group, sync_grads=False)
 
 
