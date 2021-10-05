@@ -391,7 +391,7 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
-            # distributed_backend="ddp",
+            distributed_backend="ddp",
             # plugins=[NoGradSyncDDP()],
             accelerator=self.accelerator,
             callbacks=[self.t_checkpoint_callback],
