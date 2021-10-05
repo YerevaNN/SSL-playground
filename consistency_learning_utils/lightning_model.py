@@ -87,6 +87,7 @@ class NoGradSyncDDP(DDPPlugin):
         print("sync_grads", sync_grads)
         super().all_gather(tensor=tensor, group=group, sync_grads=False)
 
+    @property
     def root_device(self):
         print("#############root device")
         super().root_device()
