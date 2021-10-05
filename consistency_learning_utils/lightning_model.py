@@ -94,7 +94,10 @@ class NoGradSyncDDP(DDPPlugin):
     ) -> None:
         print("init custom plugin")
         super().__init__(parallel_devices, num_nodes, cluster_environment, sync_batchnorm)
-
+    @property
+    def root_device(self):
+        print('root device')
+        super().root_device()
     def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
         """Perform a all_gather on all processes """
         with open('all_gather{}.log'.format(self.global_rank), 'a') as f:
@@ -396,8 +399,8 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
-            # plugins=[NoGradSyncDDP(), PrecisionPlugin(),
-            accelerator=self.accelerator,
+            plugins=[NoGradSyncDDP(), PrecisionPlugin(),
+            # accelerator=self.accelerator,
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
             logger=self.aim_logger,
