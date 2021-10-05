@@ -238,7 +238,7 @@ class STAC(pl.LightningModule):
         )
         self.accelerator = CustomAccelerator(
             training_type_plugin=NoGradSyncDDP(),
-            precision_plugin=NativeMixedPrecisionPlugin()
+            precision_plugin=PrecisionPlugin()
         )
         self.make_teacher_trainer()
         self.make_student_trainer()
@@ -391,9 +391,7 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
-            distributed_backend="ddp",
-            plugins=[NoGradSyncDDP()],
-            # accelerator=self.accelerator,
+            accelerator=self.accelerator,
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
             logger=self.aim_logger,
