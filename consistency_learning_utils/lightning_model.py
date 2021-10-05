@@ -701,9 +701,9 @@ class STAC(pl.LightningModule):
         else:
             return self.student_training_step(batch_list)
 
-    # def training_epoch_end(self, outputs: List[Any]) -> None:
-    #     if self.global_step == self.hparams['total_steps_teacher'] - 1:
-    #         torch.save(self.teacher.state_dict(), self.save_dir_name_teacher + '/last{}.ckpt'.format(self.global_rank))
+    def training_epoch_end(self, outputs: List[Any]) -> None:
+        if self.global_step == self.hparams['total_steps_teacher'] - 1:
+            torch.save(self.teacher.state_dict(), self.save_dir_name_teacher + '/last{}.ckpt'.format(self.global_rank))
 
     # @pl.data_loader
     def test_dataloader(self):
