@@ -87,6 +87,10 @@ class NoGradSyncDDP(DDPPlugin):
         print("sync_grads", sync_grads)
         super().all_gather(tensor=tensor, group=group, sync_grads=False)
 
+    def root_device(self):
+        print("#############root device")
+        super().root_device()
+
 class CustomAccelerator(GPUAccelerator):
     def __init__(
             self,
@@ -391,9 +395,9 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
-            distributed_backend="ddp",
-            # plugins=[NoGradSyncDDP()],
-            accelerator=self.accelerator,
+            # distributed_backend="ddp",
+            plugins=[NoGradSyncDDP()],
+            # accelerator=self.accelerator,
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
             logger=self.aim_logger,
