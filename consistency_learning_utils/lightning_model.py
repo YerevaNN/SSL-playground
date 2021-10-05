@@ -30,7 +30,7 @@ from aim.pytorch_lightning import AimLogger
 
 from .dataloader import get_train_test_loaders
 
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Union, Dict, Tuple
 from pathlib import Path
 
 from pytorch_lightning.plugins.training_type.ddp import DDPPlugin
@@ -87,10 +87,6 @@ class NoGradSyncDDP(DDPPlugin):
         print("sync_grads", sync_grads)
         super().all_gather(tensor=tensor, group=group, sync_grads=False)
 
-    @property
-    def root_device(self):
-        print("#############root device")
-        super().root_device()
 
 class CustomAccelerator(GPUAccelerator):
     def __init__(
@@ -266,6 +262,14 @@ class STAC(pl.LightningModule):
         self.validation_teacher_boxes = 0
         self.validation_images = 0
 
+    def all_gather(
+        self,
+        data: Union[torch.Tensor, Dict, List, Tuple],
+        group: Optional[Any] = None,
+        sync_grads: bool = False,
+    ):
+        self.trainer.accelerator.all_gather = NoGradSyncDDP.all_gather()
+        super().all_gather(data, group, sync_grads)
 
     def set_test_with_student(self, val1, val2):
         self.testWithStudent = val1
