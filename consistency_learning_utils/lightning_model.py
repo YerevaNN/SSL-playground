@@ -96,8 +96,8 @@ class NoGradSyncDDP(DDPPlugin):
         super().__init__(parallel_devices, num_nodes, cluster_environment, sync_batchnorm)
     @property
     def root_device(self):
-        print('root device')
-        super().root_device()
+        print('root device', self.parallel_devices[self.local_rank])
+        return self.parallel_devices[self.local_rank]
     def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
         """Perform a all_gather on all processes """
         with open('all_gather{}.log'.format(self.global_rank), 'a') as f:
