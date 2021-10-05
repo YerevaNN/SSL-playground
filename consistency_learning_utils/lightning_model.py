@@ -7,7 +7,7 @@ import json
 
 import torch
 # torch.use_deterministic_algorithms(True)  # not in this version?
-from pytorch_lightning.accelerators import GPUAccelerator
+from pytorch_lightning.accelerators import GPUAccelerator, Accelerator
 from pytorch_lightning.loggers import LightningLoggerBase
 from pytorch_lightning.plugins import NativeMixedPrecisionPlugin, PrecisionPlugin
 from pytorch_lightning.profiler import BaseProfiler
@@ -86,15 +86,6 @@ class NoGradSyncDDP(DDPPlugin):
         with open('all_gather{}.log'.format(self.global_rank), 'a') as f:
             f.write(sync_grads)
         super().all_gather(tensor=tensor, group=group, sync_grads=False)
-
-
-class CustomAccelerator(GPUAccelerator):
-    def __init__(
-            self,
-            precision_plugin: PrecisionPlugin,
-            training_type_plugin: NoGradSyncDDP,
-    ) -> None:
-        super().__init__(precision_plugin, training_type_plugin)
 
 
 def model_changed_classifier(reuse_classifier=False, initialize=False, class_num=20, gamma=1, box_score_thresh=0.05):
@@ -236,9 +227,9 @@ class STAC(pl.LightningModule):
         self.aim_logger = AimLogger(
             experiment=self.hparams['version_name']
         )
-        self.accelerator = CustomAccelerator(
-            training_type_plugin=NoGradSyncDDP(),
-            precision_plugin=PrecisionPlugin()
+        self.accelerator = Accelerator(
+            precision_plugin=PrecisionPlugin(),
+            training_type_plugin=NoGradSyncDDP()
         )
         self.make_teacher_trainer()
         self.make_student_trainer()
