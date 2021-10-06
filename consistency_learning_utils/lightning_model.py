@@ -7,11 +7,10 @@ import json
 
 import torch
 # torch.use_deterministic_algorithms(True)  # not in this version?
-from pytorch_lightning.accelerators import GPUAccelerator, Accelerator
+from pytorch_lightning.accelerators import Accelerator
 from pytorch_lightning.loggers import LightningLoggerBase
 from pytorch_lightning.overrides import LightningDistributedModule
-from pytorch_lightning.plugins import NativeMixedPrecisionPlugin, PrecisionPlugin
-from pytorch_lightning.plugins.environments import ClusterEnvironment
+from pytorch_lightning.plugins import PrecisionPlugin, DDPPlugin
 from pytorch_lightning.profiler import BaseProfiler
 from pytorch_lightning.utilities import AttributeDict
 
@@ -34,8 +33,6 @@ from .dataloader import get_train_test_loaders
 
 from typing import List, Optional, Any, Union, Dict, Tuple
 from pathlib import Path
-
-from pytorch_lightning.plugins import DDPPlugin
 
 from ensemble_boxes import *
 
@@ -390,9 +387,7 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
-            # distributed_backend='ddp',
-            # plugins=[NoGradSyncDDP()],
-            accelerator=self.accelerator,
+            plugins=[NoGradSyncDDP()],
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
             logger=self.aim_logger,
