@@ -90,7 +90,7 @@ class MyDataset(Dataset):
 
     def __getitem__(self, index: int):
         img_path = self.file_lines[index].strip()  # new line!
-        img_path = '/mnt/2tb' + img_path
+        # img_path = '/mnt/2tb' + img_path
 
         with open(img_path, 'rb') as f:
             image = Image.open(f)
