@@ -35,8 +35,7 @@ from .dataloader import get_train_test_loaders
 from typing import List, Optional, Any, Union, Dict, Tuple
 from pathlib import Path
 
-from pytorch_lightning.plugins.training_type.ddp import DDPPlugin
-from torch.nn.parallel.distributed import DistributedDataParallel
+from pytorch_lightning.plugins import DDPPlugin
 
 from ensemble_boxes import *
 
@@ -84,11 +83,7 @@ class SkipConnection(nn.Module):
 
 class NoGradSyncDDP(DDPPlugin):
 
-    @property
-    def root_device(self):
-        print('root device', self.parallel_devices[self.local_rank])
-        return self.parallel_devices[self.local_rank]
-    def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
+       def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
         """Perform a all_gather on all processes """
         with open('all_gather{}.log'.format(self.global_rank), 'a') as f:
             f.write(sync_grads)
@@ -395,8 +390,9 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
-            distributed_backend='ddp',
-            plugins=[NoGradSyncDDP(), PrecisionPlugin()],
+            # distributed_backend='ddp',
+            # plugins=[NoGradSyncDDP()],
+            accelerator=self.accelerator,
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
             logger=self.aim_logger,
