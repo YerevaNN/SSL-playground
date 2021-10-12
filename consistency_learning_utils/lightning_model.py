@@ -481,7 +481,7 @@ class STAC(pl.LightningModule):
                      res['loss_objectness'] + res['loss_rpn_box_reg']
         return final_loss
 
-    def teacher_supervised_step(self, sup_batch):
+    def teacher_supervised_step(self, sup_batch, batch_idx):
         if self.hparams['augmentation'] == 3:
             x, y, image_paths = [], [], []
             for i in sup_batch:
@@ -495,6 +495,8 @@ class STAC(pl.LightningModule):
         target = make_target_from_y(y)
 
         y_hat = self.teacher(x, target, image_paths)
+        with open('teacher_gpu{}.log'.format(self.global_rank), 'a') as f:
+            f.write('batch index {} image_paths {}\n'.format(batch_idx, image_paths))
 
         with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
             f.write("GR={} images=({})\n".format(
@@ -638,12 +640,12 @@ class STAC(pl.LightningModule):
             name='pseudo_boxes_confident', model=self.onTeacher, stage=self.stage)
         return unsup_loss
 
-    def teacher_training_step(self, batch_list):
+    def teacher_training_step(self, batch_list, batch_idx):
         sup_batch, _ = batch_list
         self.teacher.set_is_supervised(True)
         # save_image(sup_batch[0][0], 'image1.png')
 
-        sup_loss = self.teacher_supervised_step(sup_batch)
+        sup_loss = self.teacher_supervised_step(sup_batch, batch_idx)
 
         loss = self.frcnn_loss(sup_loss)
         self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
@@ -704,7 +706,7 @@ class STAC(pl.LightningModule):
 
     def training_step(self, batch_list, batch_idx):
         if self.onTeacher:
-            return self.teacher_training_step(batch_list)
+            return self.teacher_training_step(batch_list, batch_idx)
         else:
             return self.student_training_step(batch_list)
 
