@@ -481,7 +481,7 @@ class STAC(pl.LightningModule):
                      res['loss_objectness'] + res['loss_rpn_box_reg']
         return final_loss
 
-    def teacher_supervised_step(self, sup_batch, batch_idx):
+    def teacher_supervised_step(self, sup_batch):
         if self.hparams['augmentation'] == 3:
             x, y, image_paths = [], [], []
             for i in sup_batch:
@@ -496,7 +496,7 @@ class STAC(pl.LightningModule):
 
         y_hat = self.teacher(x, target, image_paths)
         with open('teacher_gpu{}.log'.format(self.global_rank), 'a') as f:
-            f.write('{} batch index {} image_paths {}\n'.format(self.global_step, batch_idx, image_paths))
+            f.write('{} batch index {} image_paths {}\n'.format(self.global_step, image_paths))
 
         with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
             f.write("GR={} images=({})\n".format(
@@ -640,12 +640,12 @@ class STAC(pl.LightningModule):
             name='pseudo_boxes_confident', model=self.onTeacher, stage=self.stage)
         return unsup_loss
 
-    def teacher_training_step(self, batch_list, batch_idx):
+    def teacher_training_step(self, batch_list):
         sup_batch, _ = batch_list
         self.teacher.set_is_supervised(True)
         # save_image(sup_batch[0][0], 'image1.png')
 
-        sup_loss = self.teacher_supervised_step(sup_batch, batch_idx)
+        sup_loss = self.teacher_supervised_step(sup_batch)
 
         loss = self.frcnn_loss(sup_loss)
         self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
@@ -706,13 +706,16 @@ class STAC(pl.LightningModule):
 
     def training_step(self, batch_list, batch_idx):
         if self.onTeacher:
-            return self.teacher_training_step(batch_list, batch_idx)
+            return self.teacher_training_step(batch_list)
         else:
             return self.student_training_step(batch_list)
 
     def training_epoch_end(self, outputs: List[Any]) -> None:
         if self.global_step == self.hparams['total_steps_teacher'] - 1:
-            torch.save(self.teacher.state_dict(), self.save_dir_name_teacher + '/last{}.ckpt'.format(self.global_rank))
+            dict = self.teacher.state_dict()
+            last_layer = {k: v for k, v in dict.items() if 'cls_score' in k and 'bbox_pred'in k}
+            print("teacher {} last layer {}".format(self.global_rank, last_layer))
+            # torch.save(self.teacher.state_dict(), self.save_dir_name_teacher + '/last{}.ckpt'.format(self.global_rank))
 
     # @pl.data_loader
     def test_dataloader(self):
