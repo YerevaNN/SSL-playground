@@ -94,6 +94,7 @@ class NoGradSyncDDP(DDPPlugin):
     #
     def post_training_step(self):
         # if not self.lightning_module.automatic_optimization:
+        print("automatic opt{} model backward grad sync{}".format(self.lightning_module.automatic_optimization, self.model.require_backward_grad_sync))
         self.model.require_backward_grad_sync = False
 
 class CustomAccelerator(Accelerator):
