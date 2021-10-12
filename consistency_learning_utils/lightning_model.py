@@ -714,9 +714,8 @@ class STAC(pl.LightningModule):
         if self.global_step == self.hparams['total_steps_teacher'] - 1:
             dict = self.teacher.state_dict()
             last_layer = {k: v for k, v in dict.items() if 'cls_score' in k or 'bbox_pred'in k}
-            # print("teacher {} last layer {}".format(self.global_rank, last_layer))
-            with open('teacher{}_last_layer.txt'.format(self.global_rank), 'w') as convert_file:
-                convert_file.write(json.dumps(last_layer))
+            torch.save(last_layer, self.save_dir_name_teacher + '/last_layer_teacher{}.ckpt'.format(self.global_rank))
+            print("teacher {} last layer {}".format(self.global_rank, last_layer))
             # torch.save(self.teacher.state_dict(), self.save_dir_name_teacher + '/last{}.ckpt'.format(self.global_rank))
 
     # @pl.data_loader
