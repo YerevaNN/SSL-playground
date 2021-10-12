@@ -496,7 +496,7 @@ class STAC(pl.LightningModule):
 
         y_hat = self.teacher(x, target, image_paths)
         with open('teacher_gpu{}.log'.format(self.global_rank), 'a') as f:
-            f.write('batch index {} image_paths {}\n'.format(batch_idx, image_paths))
+            f.write('{} batch index {} image_paths {}\n'.format(self.global_step, batch_idx, image_paths))
 
         with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
             f.write("GR={} images=({})\n".format(
