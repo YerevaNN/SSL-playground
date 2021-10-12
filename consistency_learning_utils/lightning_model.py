@@ -80,18 +80,21 @@ class SkipConnection(nn.Module):
         return torch.cat((x, z), dim=-1)
 
 class NoGradSyncDDP(DDPPlugin):
-    def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
-        """Perform a all_gather on all processes """
-        with open('all_gather{}.log'.format(self.global_rank), 'a') as f:
-            f.write('{}'.format(sync_grads))
-        super().all_gather(tensor=tensor, group=group, sync_grads=False)
-
-    def reduce(self, output, group: Optional[Any] = None, reduce_op: Optional[Union[ReduceOp, str]] = None):
-        # if isinstance(output, torch.Tensor):
-        #     output = sync_ddp_if_available(output, group, reduce_op)
-        print("no reducing")
-        return output
-
+    # def all_gather(self, tensor: torch.Tensor, group: Optional[Any] = None, sync_grads: bool = False) -> torch.Tensor:
+    #     """Perform a all_gather on all processes """
+    #     with open('all_gather{}.log'.format(self.global_rank), 'a') as f:
+    #         f.write('{}'.format(sync_grads))
+    #     super().all_gather(tensor=tensor, group=group, sync_grads=False)
+    #
+    # def reduce(self, output, group: Optional[Any] = None, reduce_op: Optional[Union[ReduceOp, str]] = None):
+    #     # if isinstance(output, torch.Tensor):
+    #     #     output = sync_ddp_if_available(output, group, reduce_op)
+    #     print("no reducing")
+    #     return output
+    #
+    def post_training_step(self):
+        # if not self.lightning_module.automatic_optimization:
+        self.model.require_backward_grad_sync = False
 
 class CustomAccelerator(Accelerator):
     def __init__(
@@ -393,9 +396,9 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
-            # accelerator='ddp',
-            distributed_backend='ddp',
-            plugins=[NoGradSyncDDP()],
+            accelerator='ddp',
+            # distributed_backend='ddp',
+            # plugins=[NoGradSyncDDP()],
             callbacks=[self.t_checkpoint_callback],
             num_sanity_val_steps=0,
             logger=self.aim_logger,
