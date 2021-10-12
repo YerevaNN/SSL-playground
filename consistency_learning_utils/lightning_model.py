@@ -713,7 +713,7 @@ class STAC(pl.LightningModule):
     def training_epoch_end(self, outputs: List[Any]) -> None:
         if self.global_step == self.hparams['total_steps_teacher'] - 1:
             dict = self.teacher.state_dict()
-            last_layer = {k: v for k, v in dict.items() if 'cls_score' in k and 'bbox_pred'in k}
+            last_layer = {k: v for k, v in dict.items() if 'cls_score' in k or 'bbox_pred'in k}
             print("teacher {} last layer {}".format(self.global_rank, last_layer))
             # torch.save(self.teacher.state_dict(), self.save_dir_name_teacher + '/last{}.ckpt'.format(self.global_rank))
 
