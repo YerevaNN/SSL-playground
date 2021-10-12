@@ -13,6 +13,7 @@ from pytorch_lightning.overrides import LightningDistributedModule
 from pytorch_lightning.plugins import PrecisionPlugin, DDPPlugin
 from pytorch_lightning.profiler import BaseProfiler
 from pytorch_lightning.utilities import AttributeDict
+from pytorch_lightning.utilities.distributed import ReduceOp
 
 from .nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
 import torch.optim as optim
@@ -84,6 +85,13 @@ class NoGradSyncDDP(DDPPlugin):
         with open('all_gather{}.log'.format(self.global_rank), 'a') as f:
             f.write('{}'.format(sync_grads))
         super().all_gather(tensor=tensor, group=group, sync_grads=False)
+
+    def reduce(self, output, group: Optional[Any] = None, reduce_op: Optional[Union[ReduceOp, str]] = None):
+        # if isinstance(output, torch.Tensor):
+        #     output = sync_ddp_if_available(output, group, reduce_op)
+        print("no reducing")
+        return output
+
 
 class CustomAccelerator(Accelerator):
     def __init__(
@@ -246,7 +254,6 @@ class STAC(pl.LightningModule):
 
         self.custom_validation_start()
 
-
     def custom_validation_start(self):
         self.student_mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
                                                          num_classes=self.hparams['class_num'])
@@ -386,6 +393,7 @@ class STAC(pl.LightningModule):
         )
         self.teacher_trainer = Trainer(
             gpus=-1, checkpoint_callback=True, # what is this?
+            # accelerator='ddp',
             distributed_backend='ddp',
             plugins=[NoGradSyncDDP()],
             callbacks=[self.t_checkpoint_callback],
@@ -695,9 +703,9 @@ class STAC(pl.LightningModule):
         else:
             return self.student_training_step(batch_list)
 
-    def training_epoch_end(self, outputs: List[Any]) -> None:
-        if self.global_step == self.hparams['total_steps_teacher'] - 1:
-            torch.save(self.teacher, self.save_dir_name_teacher + '/last{}.ckpt'.format(self.global_rank))
+    # def training_epoch_end(self, outputs: List[Any]) -> None:
+    #     if self.global_step == self.hparams['total_steps_teacher'] - 1:
+    #         torch.save(self.teacher, self.save_dir_name_teacher + '/last{}.ckpt'.format(self.global_rank))
 
     # @pl.data_loader
     def test_dataloader(self):
