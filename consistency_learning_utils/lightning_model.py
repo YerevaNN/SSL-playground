@@ -5,6 +5,8 @@ import numpy as np
 import json
 
 import torch
+# from torch._C import T
+# from torch._C import contiguous_format
 # torch.use_deterministic_algorithms(True)  # not in this version?
 from .nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
 import torch.optim as optim
@@ -46,6 +48,19 @@ def make_target_from_y(y):
         target.append({'boxes': tensor_boxes, 'labels': tensor_labels})
     return target
 
+
+def bb_intersection_over_union(boxA, boxB):
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+    interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+    boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+    boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+    iou = interArea / float(boxAArea + boxBArea - interArea)
+    return iou
+
+
 def break_batch(batch):
     x, y, paths = [], [], []
     for img in batch:
@@ -53,6 +68,7 @@ def break_batch(batch):
         y.append(img[1])
         paths.append(img[2])
     return x, y, paths
+
 
 class SkipConnection(nn.Module):
 
@@ -132,6 +148,98 @@ def model_changed_classifier(reuse_classifier=False, initialize=False, class_num
     return model
 
 
+def constant_thresholding(pred, conf):
+    selected_pseudo_labels = []
+
+    for p in pred:
+        indices = torch.where(torch.transpose(p, 0, 1)[5] >= conf)
+        p = p[indices]
+        selected_pseudo_labels.append(p)
+
+    return selected_pseudo_labels
+
+
+def dynamic_thresholding(pred, class_num, conf, gamma):
+    selected_pseudo_labels = []
+    for i, im_pred in enumerate(pred):
+        classes = range(1, class_num+1)
+
+        class_boxes = {i: [] for i in classes}
+        for p in im_pred:
+            class_boxes[int(p[4])].append(p[5])
+            
+        scores_sums = {cl : sum(class_boxes[cl]) for cl in classes}
+        scaled_threshold = np.power(list(scores_sums.values()), gamma)
+        scaled_threshold = scaled_threshold / scaled_threshold.max()
+        # scaled_threshold = scaled_threshold / scaled_threshold.max() * contiguous_format
+
+        labels = im_pred[:, 4].int() - 1
+        thresholds = scaled_threshold[labels]
+        thresholds = torch.from_numpy(thresholds)
+        selected_labels_of_image = im_pred[:,5] >= thresholds
+        selected_pseudo_labels.append(im_pred[selected_labels_of_image])
+        
+    return selected_pseudo_labels
+
+
+def oracle(pred, truth, IOU_threshold=0.5):
+    selected_pseudo_labels = []
+    for i, im_pred in enumerate(pred):
+        image_truth = truth[i]
+        indices = []
+        for t in image_truth:
+            tbox = t['bndbox']
+            truth_bbox = [tbox['xmin'], tbox['ymin'], tbox['xmax'], tbox['ymax']]
+            bestIOU = IOU_threshold
+            best_p = None
+            for p in range(0, len(im_pred)):
+                pred_label = im_pred[p][4]
+                if pred_label == t['label']:
+                    pred_bbox = [im_pred[p][0], im_pred[p][1], im_pred[p][2], im_pred[p][3]]
+                    IOU = bb_intersection_over_union(truth_bbox, pred_bbox)
+                    if IOU >= bestIOU:
+                        best_p = p
+                        bestIOU = IOU
+            if best_p:
+                indices.append(best_p)
+        selected_labels_of_image = im_pred[sorted(indices)]
+        selected_pseudo_labels.append(selected_labels_of_image)
+    return selected_pseudo_labels
+
+
+def change_prediction_format(unlab_pred):
+    new_pred = []
+    for sample_pred in unlab_pred:
+        boxes = sample_pred['boxes'].cpu()
+        labels = sample_pred['labels'].cpu().unsqueeze(1)
+        scores = sample_pred['scores'].cpu().unsqueeze(1)
+        boxes = torch.cat((boxes, labels), dim = 1)
+        boxes = torch.cat((boxes, scores), dim = 1)
+        new_pred.append(boxes)
+    return new_pred
+
+
+def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=None):
+    if type == 'constant':
+        if conf is not None:
+            selected_pseudo_labels = constant_thresholding(pred, conf)
+        else:
+            raise NotImplementedError
+    elif type == 'dynamic':
+        if class_num is not None and conf is not None and gamma is not None:
+            selected_pseudo_labels = dynamic_thresholding(pred, class_num, conf, gamma)
+        else:
+            raise NotImplementedError
+    elif type == 'oracle':
+        if truth is not None:
+            selected_pseudo_labels = oracle(pred, truth)
+        else:
+            raise NotImplementedError
+    else:
+        raise NotImplementedError
+    return selected_pseudo_labels
+
+
 class STAC(pl.LightningModule):
     def __init__(self, hparams: Namespace) -> None:
         super().__init__()
@@ -181,6 +289,13 @@ class STAC(pl.LightningModule):
         print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
             self.hparams['initialization'], self.hparams['reuse_classifier']
         ))
+        self.predictions_csv_path = os.path.join(version_folder, 'predictions_on_unlabeled.csv')
+        os.makedirs(version_folder, exist_ok=True)
+        headers = ['step', 'img_path', 'confidence', 'class', 'bbox']
+        pred_csv_file = open(self.predictions_csv_path, 'w')
+        pred_csv_writer = csv.writer(pred_csv_file)
+        pred_csv_writer.writerow(headers)
+        pred_csv_file.close()
         self.teacher_init = 'full' if (self.hparams['teacher_init_path'] and (not self.hparams['skip_burn_in'])) else \
             self.hparams['initialization']
 
@@ -329,7 +444,8 @@ class STAC(pl.LightningModule):
                                          self.hparams['num_workers'],
                                          stage=self.stage,
                                          validation_part=self.validation_part,
-                                         augmentation=self.hparams['augmentation'])
+                                         augmentation=self.hparams['augmentation'],
+                                         thresholding=self.hparams['thresholding_method'])
         if (os.path.isfile(external_val_file_path)):
             self.train_loader, self.test_loader, self.val_loader = loaders
         else:
@@ -475,12 +591,14 @@ class STAC(pl.LightningModule):
             f.write("Unsupervised GR={} images=({})\n".format(
             self.global_rank, ' '.join([os.path.basename(i[0][2]) for i in unsup_batch])))
 
-        unlabeled_x, unlabeled_image_paths = [], []
+        unlabeled_x, unlabeled_y, unlabeled_image_paths = [], [], []
         augmented_x, augmented_image_paths = [], []
 
         for i in unsup_batch:
             unlab, augment = i
             unlabeled_x.append(unlab[0])
+            if self.hparams['thresholding_method'].startswith('oracle'):
+                unlabeled_y.append(unlab[1])
             unlabeled_image_paths.append(unlab[2])
             augmented_x.append(augment[0])
             augmented_image_paths.append(augment[2])
@@ -488,68 +606,56 @@ class STAC(pl.LightningModule):
         self.teacher.eval()
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
         # save_image(unlabeled_x[0], 'unlabeled.png')
-        # save_image(augmented_x[0], 'augmented.png')
-
-        to_train = False
+        # save_image(augmented_x[0], 'augmented.png')=
 
         pseudo_boxes_all = 0
         pseudo_boxes_confident = 0
 
         non_zero_boxes = []
         target = []
+        predictions = change_prediction_format(unlab_pred)
 
-        thresholds = np.zeros(self.hparams['class_num'] + 1)
-        if self.thresholding_method == 'constant':
-            thresholds += self.confidence_threshold
-        elif self.thresholding_method == 'dynamic1':
-            # calculate stats for this batch
-            box_count = 0
-            for sample_pred in unlab_pred:
-                labels = sample_pred['labels'].cpu()
-                scores = sample_pred['scores'].cpu()
-                for l, s in zip(labels, scores):
-                    thresholds[l] += s
-                    box_count += 1
-            if box_count == 0:
-                thresholds += self.confidence_threshold
-            else:
-                p = np.power(thresholds, 0.1)
-                thresholds = p / p.max() * self.confidence_threshold
+        rows = []
+        for i in range(len(predictions)):
+            for p in predictions[i]:
+                bbox = [float(p[0]), float(p[1]), float(p[2]), float(p[3])]
+                row = [self.global_step, unlabeled_image_paths[i], float(p[5]), float(p[4]), bbox]
+                rows.append(row)
+        
+        with open(self.predictions_csv_path, 'a') as f:
+            writer = csv.writer(f)
+            writer.writerows(rows)
 
-            with open('{}_thresholds.txt'.format(self.hparams['version_name']), 'a') as f:
-                f.write(' '.join(["{:.2f}".format(t) for t in thresholds]) + '\n')
+        selected_pseudo_labels = filter_predictions(self.hparams['thresholding_method'], 
+                                                    predictions, truth=unlabeled_y,
+                                                    class_num=self.hparams['class_num'],
+                                                    conf=self.hparams['confidence_threshold'],
+                                                    gamma=self.hparams['dt_gamma'])
 
-        for i, sample_pred in enumerate(unlab_pred):
-            boxes = sample_pred['boxes'].cpu()
-            labels = sample_pred['labels'].cpu()
-            scores = sample_pred['scores'].cpu()
+        
 
-            index = []
-            target_boxes = []
-            target_labels = []
-            for j in range(len(labels)):
-                if scores[j] < thresholds[labels[j]]:
-                    index.append(j)
-            pseudo_boxes_all += len(boxes)
+        target_boxes = []
+        target_labels = []
 
-            boxes = np.delete(boxes, index, axis=0)
-            labels = np.delete(labels, index)
-            scores = np.delete(scores, index)
+        for i, selected_labels_of_image in enumerate(selected_pseudo_labels):
+            for selected_pl in selected_labels_of_image:
+                target_boxes.append([selected_pl[0], selected_pl[1], selected_pl[2], selected_pl[3]])
+                target_labels.append(selected_pl[4])
 
-            if len(boxes) > 0:
+            pseudo_boxes_all += predictions[i].shape[0]
+
+            if selected_labels_of_image.shape[0] > 0:
                 non_zero_boxes.append(i)
 
             # TODO move to the device of the model
-            pseudo_boxes_confident += len(boxes)
-
-            for j, box in enumerate(boxes):
-                target_boxes.append([box[0], box[1], box[2], box[3]])
-                target_labels.append(labels[j])
+            pseudo_boxes_confident += selected_labels_of_image.shape[0]
 
             tensor_boxes = torch.tensor(target_boxes).float().cuda()
             tensor_labels = torch.tensor(target_labels).long().cuda()
 
             target.append({'boxes': tensor_boxes, 'labels': tensor_labels})
+
+
 
         if len(non_zero_boxes):
             augment_pred = self.student(
@@ -934,5 +1040,4 @@ class STAC(pl.LightningModule):
         else:
             print('testing with teacher')
             self.teacher_test_trainer.test(model=self)
-
 

@@ -27,7 +27,8 @@
 
     "augmentation": 2,
     "confidence_threshold": 0.8,
-    "thresholding_method": "dynamic1",
+    "dt_gamma": 0.1,
+    "thresholding_method": "dynamic",
     "box_score_thresh": 0.005,
     "EMA_keep_rate": 0.996,
     "batch_size": 5,

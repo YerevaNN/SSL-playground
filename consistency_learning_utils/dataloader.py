@@ -33,7 +33,8 @@ class MyDataset(Dataset):
                  file_path: str, target_required: bool = False,
                  label_root: str = None,
                  end_to_take: str = None,
-                 part_to_take: float = 0.) -> None:
+                 part_to_take: float = 0.,
+                 thresholding: str = None) -> None:
         super().__init__()
 
         self.file_path = file_path
@@ -41,6 +42,7 @@ class MyDataset(Dataset):
         self.label_root = label_root
         self.end_to_take = end_to_take
         self.part_to_take = part_to_take
+        self.thresholding = thresholding
 
         with open(self.file_path) as f:
             self.file_lines = f.readlines()
@@ -99,10 +101,10 @@ class MyDataset(Dataset):
         image_name = img_path.split('/')[-1]
         if len(image.shape) == 2:
             image = np.repeat(image[:, :, np.newaxis], 3, axis=2)
-        if not self.target_required:
-            target = None
-        else:
+        if self.target_required or self.thresholding is not None and self.thresholding.startswith('oracle'):
             target = self.__get_target__(image_name, width, height)
+        else:
+            target = None
         return image, target, img_path
 
 
@@ -115,9 +117,10 @@ def voc_collate_fn(batch):
 
 def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file_path, external_val_file_path,
                            external_val_label_root, label_root, batch_size, num_workers, stage=0,
-                           validation_part=0, pin_memory=True, augmentation=1):
+                           validation_part=0, pin_memory=True, augmentation=1, thresholding='constant'):
 
-    train_unlabelled_ds = MyDataset(unlabelled_file_path, target_required=False)
+    train_unlabelled_ds = MyDataset(unlabelled_file_path, target_required=False,
+                                    thresholding=thresholding, label_root=label_root)
     test_ds = MyDataset(testing_file_path, target_required=False)
     if(os.path.isfile(external_val_file_path)):
         external_val_ds = MyDataset(external_val_file_path, target_required=True, label_root=external_val_label_root)

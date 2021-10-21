@@ -36,6 +36,7 @@ parser.add_argument('--reuse_classifier', type=str, default=None)
 parser.add_argument('--check_val_steps', type=int, default=None)
 parser.add_argument('--batch_size', type=int, default=None)
 parser.add_argument('--thresholding_method', type=str, default=None)
+parser.add_argument('--dt_gamma', type=float, default=None)
 parser.add_argument('--total_steps_teacher_initial', type=int, default=None)
 parser.add_argument('--total_steps_student_initial', type=int, default=None)
 parser.add_argument('--inference_only', action='store_true')  # do not train. attempt to test with the checkpoint
@@ -82,7 +83,7 @@ if __name__ == "__main__":
     for key in ['experiment_name', 'seed', 'learning_rate', 'student_learning_rate', 'student_warmup_steps',
                 'lr_schedule', 'student_lr_schedule', 'num_workers',
                 'gradient_clip_threshold', 'confidence_threshold', 'thresholding_method',
-                'weight_decay', 'EMA_keep_rate', 'gamma',
+                'weight_decay', 'EMA_keep_rate', 'gamma', 'dt_gamma',
                 'initialization', 'reuse_classifier', 'check_val_steps', 'batch_size',
                 'box_score_thresh', 'augmentation', 'teacher_init_path', 'teacher_init_skip_last_layer',
                 'total_steps_teacher_initial', 'total_steps_student_initial', 'skip_burn_in']:
