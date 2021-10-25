@@ -632,12 +632,10 @@ class STAC(pl.LightningModule):
                                                     conf=self.hparams['confidence_threshold'],
                                                     gamma=self.hparams['dt_gamma'])
 
-        
-
-        target_boxes = []
-        target_labels = []
 
         for i, selected_labels_of_image in enumerate(selected_pseudo_labels):
+            target_boxes = []
+            target_labels = []
             for selected_pl in selected_labels_of_image:
                 target_boxes.append([selected_pl[0], selected_pl[1], selected_pl[2], selected_pl[3]])
                 target_labels.append(selected_pl[4])
