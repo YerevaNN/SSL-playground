@@ -7,6 +7,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import Compose, ToTensor, ToPILImage
 from .helpers.cutout import Cutout
 from PIL import Image
+import random
 
 from .helpers import autoaugment
 # from .helpers.transforms import RandomErasing
@@ -22,6 +23,7 @@ class ConcatDataset(Dataset):
     def __getitem__(self, i):
         offsset = self.counter // len(self.datasets[0]) * len(self.datasets[0])
         secondDatasetIndex = (offsset + i) % len(self.datasets[1])
+        secondDatasetIndex = random.randint(0, len(self.datasets[1]) - 1)
         self.counter += 1
         return (self.datasets[0][i], self.datasets[1][secondDatasetIndex])
 
