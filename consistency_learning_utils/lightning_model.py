@@ -23,6 +23,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from aim.pytorch_lightning import AimLogger
 
 from .dataloader import get_train_test_loaders
+from .nets.oracle.convnet import inference
 
 def make_target_from_y(y):
     """
@@ -245,7 +246,7 @@ def change_prediction_format(unlab_pred):
     return new_pred
 
 
-def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=None, iou_thresh=None):
+def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=None, iou_thresh=None, model_path=None):
     if type == 'constant':
         if conf is not None:
             selected_pseudo_labels = constant_thresholding(pred, conf)
@@ -262,9 +263,14 @@ def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=
         else:
             raise NotImplementedError
     elif type == 'oracle2':
-        if truth is not None:
+        if truth is not None and iou_thresh is not None:
             selected_pseudo_labels = oracle2(pred, truth,IOU_threshold=iou_thresh,
                                              conf_threshold=conf)
+        else:
+            raise NotImplementedError
+    elif type == 'convnet':
+        if iou_thresh is not None and model_path is not None:
+            selected_pseudo_labels = inference(pred, model_path, iou_thresh=iou_thresh)
         else:
             raise NotImplementedError
     else:
@@ -664,7 +670,8 @@ class STAC(pl.LightningModule):
                                                     class_num=self.hparams['class_num'],
                                                     conf=self.hparams['confidence_threshold'],
                                                     gamma=self.hparams['dt_gamma'],
-                                                    iou_thresh=self.hparams['oracle_iou_threshold'])
+                                                    iou_thresh=self.hparams['oracle_iou_threshold'],
+                                                    model_path=self.hparams['oracle_model_path'])
 
 
         for i, selected_labels_of_image in enumerate(selected_pseudo_labels):

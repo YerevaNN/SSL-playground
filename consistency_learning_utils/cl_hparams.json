@@ -31,15 +31,17 @@
     "thresholding_method": "dynamic",
     "box_score_thresh": 0.005,
     "EMA_keep_rate": 0.996,
-    "batch_size": 5,
-    "oracle_iou_threshold": 0.5,
+    "batch_size": 1,
     "gradient_clip_threshold": 1,
     "gamma": 0,
 
     "seed": 1,
-    "clear_predictions_csv": true,
     "validation_part": 0,
     "num_workers": 2,
+
+    "oracle_iou_threshold": 0.5,
+    "clear_predictions_csv": true,
+    "oracle_model_path": "/home/hkhachatrian/Oracle/checkpoints/oracle/last.ckpt",
 
     "consistency_lambda": 2,
     "consistency_criterion": "KL"
