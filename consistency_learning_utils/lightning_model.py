@@ -170,8 +170,7 @@ def dynamic_thresholding(pred, class_num, conf, gamma):
             
         scores_sums = {cl : sum(class_boxes[cl]) for cl in classes}
         scaled_threshold = np.power(list(scores_sums.values()), gamma)
-        scaled_threshold = scaled_threshold / scaled_threshold.max()
-        # scaled_threshold = scaled_threshold / scaled_threshold.max() * contiguous_format
+        scaled_threshold = scaled_threshold / scaled_threshold.max() * conf
 
         labels = im_pred[:, 4].int() - 1
         thresholds = scaled_threshold[labels]
@@ -183,6 +182,7 @@ def dynamic_thresholding(pred, class_num, conf, gamma):
 
 
 def oracle(pred, truth, IOU_threshold=0.5):
+    # Returning the best prediction over the threshold
     selected_pseudo_labels = []
     for i, im_pred in enumerate(pred):
         image_truth = truth[i]
@@ -207,6 +207,32 @@ def oracle(pred, truth, IOU_threshold=0.5):
     return selected_pseudo_labels
 
 
+def oracle2(pred, truth, IOU_threshold=0.7, conf_threshold=-1.0):
+    # Returning all the predictions over the threshold
+    selected_pseudo_labels = []
+    for i, im_pred in enumerate(pred):
+        image_truth = truth[i]
+        indices = []
+        for t in image_truth:
+            tbox = t['bndbox']
+            truth_bbox = [tbox['xmin'], tbox['ymin'], tbox['xmax'], tbox['ymax']]
+            best_ps = []
+            for p in range(0, len(im_pred)):
+                pred_label = im_pred[p][4]
+                pred_conf = im_pred[p][5]
+                if pred_label == t['label']:
+                    pred_bbox = [im_pred[p][0], im_pred[p][1], im_pred[p][2], im_pred[p][3]]
+                    IOU = bb_intersection_over_union(truth_bbox, pred_bbox)
+                    if IOU >= IOU_threshold and pred_conf >= conf_threshold:
+                        best_ps.append(p)
+
+            for best_p in best_ps:
+                indices.append(best_p)
+        selected_labels_of_image = im_pred[sorted(indices)]
+        selected_pseudo_labels.append(selected_labels_of_image)
+    return selected_pseudo_labels
+
+
 def change_prediction_format(unlab_pred):
     new_pred = []
     for sample_pred in unlab_pred:
@@ -219,7 +245,7 @@ def change_prediction_format(unlab_pred):
     return new_pred
 
 
-def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=None):
+def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=None, iou_thresh=None):
     if type == 'constant':
         if conf is not None:
             selected_pseudo_labels = constant_thresholding(pred, conf)
@@ -233,6 +259,12 @@ def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=
     elif type == 'oracle':
         if truth is not None:
             selected_pseudo_labels = oracle(pred, truth)
+        else:
+            raise NotImplementedError
+    elif type == 'oracle2':
+        if truth is not None:
+            selected_pseudo_labels = oracle2(pred, truth,IOU_threshold=iou_thresh,
+                                             conf_threshold=conf)
         else:
             raise NotImplementedError
     else:
@@ -291,11 +323,12 @@ class STAC(pl.LightningModule):
         ))
         self.predictions_csv_path = os.path.join(version_folder, 'predictions_on_unlabeled.csv')
         os.makedirs(version_folder, exist_ok=True)
-        headers = ['step', 'img_path', 'confidence', 'class', 'bbox']
-        pred_csv_file = open(self.predictions_csv_path, 'w')
-        pred_csv_writer = csv.writer(pred_csv_file)
-        pred_csv_writer.writerow(headers)
-        pred_csv_file.close()
+        if self.hparams['clear_predictions_csv']:
+            headers = ['step', 'img_path', 'confidence', 'class', 'bbox', 'features']
+            pred_csv_file = open(self.predictions_csv_path, 'w')
+            pred_csv_writer = csv.writer(pred_csv_file)
+            pred_csv_writer.writerow(headers)
+            pred_csv_file.close()
         self.teacher_init = 'full' if (self.hparams['teacher_init_path'] and (not self.hparams['skip_burn_in'])) else \
             self.hparams['initialization']
 
@@ -606,7 +639,7 @@ class STAC(pl.LightningModule):
         self.teacher.eval()
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
         # save_image(unlabeled_x[0], 'unlabeled.png')
-        # save_image(augmented_x[0], 'augmented.png')=
+        # save_image(augmented_x[0], 'augmented.png')
 
         pseudo_boxes_all = 0
         pseudo_boxes_confident = 0
@@ -621,7 +654,7 @@ class STAC(pl.LightningModule):
                 bbox = [float(p[0]), float(p[1]), float(p[2]), float(p[3])]
                 row = [self.global_step, unlabeled_image_paths[i], float(p[5]), float(p[4]), bbox]
                 rows.append(row)
-        
+
         with open(self.predictions_csv_path, 'a') as f:
             writer = csv.writer(f)
             writer.writerows(rows)
@@ -630,7 +663,8 @@ class STAC(pl.LightningModule):
                                                     predictions, truth=unlabeled_y,
                                                     class_num=self.hparams['class_num'],
                                                     conf=self.hparams['confidence_threshold'],
-                                                    gamma=self.hparams['dt_gamma'])
+                                                    gamma=self.hparams['dt_gamma'],
+                                                    iou_thresh=self.hparams['oracle_iou_threshold'])
 
 
         for i, selected_labels_of_image in enumerate(selected_pseudo_labels):
@@ -996,7 +1030,7 @@ class STAC(pl.LightningModule):
         if not self.hparams['skip_burn_in']:
             print("Starting teacher")
             self.onTeacher = True
-            print("Will train for {} epochs, validate every {} epochs".format(
+            print("Will train the teacher for {} epochs, validate every {} epochs".format(
                 self.hparams['total_steps_teacher'] // self.batches_per_epoch,
                 self.check_val_epochs
             ))
@@ -1018,6 +1052,11 @@ class STAC(pl.LightningModule):
             self.onTeacher = False
 
             print("starting student")
+            
+            print("Will train the student for {} epochs, validate every {} epochs".format(
+                self.hparams['total_steps_student'] // self.batches_per_epoch,
+                self.check_val_epochs
+            ))
             self.student_trainer.fit(self)
             print("finished student")
 

@@ -477,7 +477,7 @@ class RoIHeads(torch.nn.Module):
         regression_targets = self.box_coder.encode(matched_gt_boxes, proposals)
         return proposals, matched_idxs, labels, regression_targets
 
-    def postprocess_detections(self, class_logits, box_regression, proposals, image_shapes):
+    def postprocess_detections(self, class_logits, box_regression, box_features, proposals, image_shapes):
         device = class_logits.device
         num_classes = class_logits.shape[-1]
 
@@ -490,12 +490,15 @@ class RoIHeads(torch.nn.Module):
         pred_boxes = pred_boxes.split(boxes_per_image, 0)
         pred_scores = pred_scores.split(boxes_per_image, 0)
         pred_logits = class_logits.split(boxes_per_image, 0)
+        pred_features = box_features.split(boxes_per_image, 0)
 
         all_boxes = []
         all_scores = []
         all_labels = []
         all_logits = []
-        for boxes, scores, image_shape, logits in zip(pred_boxes, pred_scores, image_shapes, pred_logits):
+        all_features = []
+
+        for boxes, scores, image_shape, logits, features in zip(pred_boxes, pred_scores, image_shapes, pred_logits, pred_features):
             boxes = box_ops.clip_boxes_to_image(boxes, image_shape)
 
             # create labels for each prediction
@@ -513,28 +516,30 @@ class RoIHeads(torch.nn.Module):
             scores = scores.flatten()
             labels = labels.flatten()
             logits = logits.flatten()
+            features = torch.repeat_interleave(features, num_classes - 1, dim = 0)
 
 
             # remove low scoring boxes
             inds = torch.nonzero(scores > self.score_thresh).squeeze(1)
-            boxes, scores, labels, logits = boxes[inds], scores[inds], labels[inds], logits[inds]
+            boxes, scores, labels, logits, features = boxes[inds], scores[inds], labels[inds], logits[inds], features[inds]
 
             # remove empty boxes
             keep = box_ops.remove_small_boxes(boxes, min_size=1e-2)
-            boxes, scores, labels, logits = boxes[keep], scores[keep], labels[keep], logits[keep]
+            boxes, scores, labels, logits, features = boxes[keep], scores[keep], labels[keep], logits[keep], features[keep]
 
             # non-maximum suppression, independently done per class
             keep = box_ops.batched_nms(boxes, scores, labels, self.nms_thresh)
             # keep only topk scoring predictions
             keep = keep[:self.detections_per_img]
-            boxes, scores, labels, logits = boxes[keep], scores[keep], labels[keep], logits[keep]
+            boxes, scores, labels, logits, features = boxes[keep], scores[keep], labels[keep], logits[keep], features[keep]
 
             all_boxes.append(boxes)
             all_scores.append(scores)
             all_labels.append(labels)
             all_logits.append(logits)
+            all_features.append(features)
 
-        return all_boxes, all_scores, all_labels, all_logits
+        return all_boxes, all_scores, all_labels, all_logits, all_features
 
 
     def forward(self, features, proposals, image_shapes, targets=None):
@@ -555,22 +560,13 @@ class RoIHeads(torch.nn.Module):
         if self.training:
             proposals, matched_idxs, labels, regression_targets = self.select_training_samples(proposals, targets)
 
-        box_features = self.box_roi_pool(features, proposals, image_shapes)
+        if not self.training:
+            new_proposals = [targets[i]['boxes'] for i in range(len(targets))]
+            box_features = self.box_roi_pool(features, new_proposals, image_shapes)
+        else:
+            box_features = self.box_roi_pool(features, proposals, image_shapes)
         box_features = self.box_head(box_features)
         class_logits, box_regression = self.box_predictor(box_features)
-
-        # if self.training:
-        #     pred_boxes = self.box_coder.decode(box_regression, proposals)
-
-        #     curJson = []
-        #     with open("./train_logits.json") as jsonFile:
-        #         curJson = json.load(jsonFile)
-        #         cl = class_logits.cpu().detach().numpy().tolist()
-        #         br = pred_boxes.cpu().detach().numpy().tolist()
-        #         curDetections = {'class_logits': cl, 'box_regression': br}
-        #         curJson.append(curDetections)
-        #     with open("./train_logits.json", "w+") as jsonFile:
-        #         json.dump(curJson, jsonFile)
 
         result, losses = [], {}
         if self.training:
@@ -578,7 +574,7 @@ class RoIHeads(torch.nn.Module):
                 class_logits, box_regression, labels, regression_targets, self.gamma)
             losses = dict(loss_classifier=loss_classifier, loss_box_reg=loss_box_reg)
         else:
-            boxes, scores, labels, logits = self.postprocess_detections(class_logits, box_regression, proposals, image_shapes)
+            boxes, scores, labels, logits, features = self.postprocess_detections(class_logits, box_regression, box_features, proposals, image_shapes)
             # self.make_and_dump_json(boxes, scores, labels, logits)
             num_images = len(boxes)
             for i in range(num_images):
@@ -588,70 +584,8 @@ class RoIHeads(torch.nn.Module):
                         labels=labels[i],
                         scores=scores[i],
                         logits=logits[i],
+                        features=features[i],
                     )
                 )
-
-        if self.has_mask:
-            mask_proposals = [p["boxes"] for p in result]
-            if self.training:
-                # during training, only focus on positive boxes
-                num_images = len(proposals)
-                mask_proposals = []
-                pos_matched_idxs = []
-                for img_id in range(num_images):
-                    pos = torch.nonzero(labels[img_id] > 0).squeeze(1)
-                    mask_proposals.append(proposals[img_id][pos])
-                    pos_matched_idxs.append(matched_idxs[img_id][pos])
-
-            mask_features = self.mask_roi_pool(features, mask_proposals, image_shapes)
-            mask_features = self.mask_head(mask_features)
-            mask_logits = self.mask_predictor(mask_features)
-
-            loss_mask = {}
-            if self.training:
-                gt_masks = [t["masks"] for t in targets]
-                gt_labels = [t["labels"] for t in targets]
-                loss_mask = maskrcnn_loss(
-                    mask_logits, mask_proposals,
-                    gt_masks, gt_labels, pos_matched_idxs)
-                loss_mask = dict(loss_mask=loss_mask)
-            else:
-                labels = [r["labels"] for r in result]
-                masks_probs = maskrcnn_inference(mask_logits, labels)
-                for mask_prob, r in zip(masks_probs, result):
-                    r["masks"] = mask_prob
-
-            losses.update(loss_mask)
-
-        if self.has_keypoint:
-            keypoint_proposals = [p["boxes"] for p in result]
-            if self.training:
-                # during training, only focus on positive boxes
-                num_images = len(proposals)
-                keypoint_proposals = []
-                pos_matched_idxs = []
-                for img_id in range(num_images):
-                    pos = torch.nonzero(labels[img_id] > 0).squeeze(1)
-                    keypoint_proposals.append(proposals[img_id][pos])
-                    pos_matched_idxs.append(matched_idxs[img_id][pos])
-
-            keypoint_features = self.keypoint_roi_pool(features, keypoint_proposals, image_shapes)
-            keypoint_features = self.keypoint_head(keypoint_features)
-            keypoint_logits = self.keypoint_predictor(keypoint_features)
-
-            loss_keypoint = {}
-            if self.training:
-                gt_keypoints = [t["keypoints"] for t in targets]
-                loss_keypoint = keypointrcnn_loss(
-                    keypoint_logits, keypoint_proposals,
-                    gt_keypoints, pos_matched_idxs)
-                loss_keypoint = dict(loss_keypoint=loss_keypoint)
-            else:
-                keypoints_probs, kp_scores = keypointrcnn_inference(keypoint_logits, keypoint_proposals)
-                for keypoint_prob, kps, r in zip(keypoints_probs, kp_scores, result):
-                    r["keypoints"] = keypoint_prob
-                    r["keypoints_scores"] = kps
-
-            losses.update(loss_keypoint)
 
         return result, losses

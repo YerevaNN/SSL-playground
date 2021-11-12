@@ -32,10 +32,12 @@
     "box_score_thresh": 0.005,
     "EMA_keep_rate": 0.996,
     "batch_size": 5,
+    "oracle_iou_threshold": 0.5,
     "gradient_clip_threshold": 1,
     "gamma": 0,
 
     "seed": 1,
+    "clear_predictions_csv": true,
     "validation_part": 0,
     "num_workers": 2,
 

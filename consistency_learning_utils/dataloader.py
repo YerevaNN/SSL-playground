@@ -18,13 +18,9 @@ class ConcatDataset(Dataset):
         if len(datasets[0]) > len(datasets[1]):
             datasets[0], datasets[1] = datasets[1], datasets[0]
         self.datasets = datasets
-        self.counter = 0
 
     def __getitem__(self, i):
-        offsset = self.counter // len(self.datasets[0]) * len(self.datasets[0])
-        secondDatasetIndex = (offsset + i) % len(self.datasets[1])
         secondDatasetIndex = random.randint(0, len(self.datasets[1]) - 1)
-        self.counter += 1
         return (self.datasets[0][i], self.datasets[1][secondDatasetIndex])
 
     def __len__(self):

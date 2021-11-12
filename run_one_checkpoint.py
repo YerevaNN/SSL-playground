@@ -20,6 +20,7 @@ parser.add_argument('--skip_burn_in', action='store_true')  # if true, student w
 parser.add_argument('--experiment_name', type=str, default=None)
 parser.add_argument('--seed', type=int, default=None)
 parser.add_argument('--learning_rate', type=float, default=None)
+parser.add_argument('--oracle_iou_threshold', type=float, default=None)
 parser.add_argument('--lr_schedule', type=str, default=None)
 parser.add_argument('--student_learning_rate', type=float, default=None)
 parser.add_argument('--student_lr_schedule', type=str, default=None)
@@ -86,7 +87,8 @@ if __name__ == "__main__":
                 'weight_decay', 'EMA_keep_rate', 'gamma', 'dt_gamma',
                 'initialization', 'reuse_classifier', 'check_val_steps', 'batch_size',
                 'box_score_thresh', 'augmentation', 'teacher_init_path', 'teacher_init_skip_last_layer',
-                'total_steps_teacher_initial', 'total_steps_student_initial', 'skip_burn_in']:
+                'total_steps_teacher_initial', 'total_steps_student_initial', 'skip_burn_in',
+                'oracle_iou_threshold']:
         if key in argsdict and argsdict[key] is not None:
             print("Overriding {} to {}".format(key, argsdict[key]))
             hparams[key] = argsdict[key]
@@ -171,6 +173,7 @@ if __name__ == "__main__":
             args.dataset_name, args.phase, args.stage, 'from_coco', 0,
             hparams['experiment_name'])
 
+    hparams['clear_predictions_csv'] = False
     best_model = STAC(argparse.Namespace(**hparams))
     best_model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
                             external_val_file_path, external_val_label_root, label_root)
