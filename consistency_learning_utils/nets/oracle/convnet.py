@@ -231,4 +231,3 @@ def inference(pred, model_path, iou_thresh=0.5):
 #     model.set_datasets(samples, selected_pseudo_labels, train_cl_masks, test_cl_masks)
 #     model.fit_model()
 #     model.test()
-s
