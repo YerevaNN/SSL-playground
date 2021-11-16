@@ -17,14 +17,14 @@ import os
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(100, 128, 3, padding=2, stride=1) # 100x1030x1 -> 128x1032x3
+        self.conv1 = nn.Conv2d(1, 128, 3, padding=2, stride=1) # 100x1030x1 -> 128x1032x3
         self.conv2 = nn.Conv2d(128, 64, 5, padding=1, stride=3) # 128x1032x3 -> 64x344x1
         self.conv3 = nn.Conv2d(64, 32, 3, padding=(2, 1), stride=3) # 64x344x1 -> 32x116x1
         self.conv4 = nn.Conv2d(32, 32, 3, padding=(2, 1), stride=3) # 32x116x1 -> 32x40x1
         self.conv5 = nn.Conv2d(32, 32, 3, padding=1, stride=1) # 32x40x1 -> 32x40x1
         self.conv6 = nn.Conv2d(32, 32, 3, padding=1, stride=1) # 32x40x1 -> 32x40x1
         self.conv7 = nn.Conv2d(32, 1, 3, padding=1, stride=1) # 32x40x1 -> 32x40x1
-        self.conv8 = nn.Conv2d(1, 100, (40, 1)) # 32x40x1 -> 100x1x1
+        self.conv8 = nn.Conv2d(1, 1, (1030, 1)) # 32x40x1 -> 100x1x1
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -65,9 +65,9 @@ def get_train_test_loaders(samples, labels):
     labels = torch.tensor(labels)
     labels = torch.reshape(labels, (7942, 1, 1988))
 
-    train_samples, test_samples = torch.utils.data.random_split(samples, [5500, 2442],
+    train_samples, test_samples = torch.utils.data.random_split(samples, [650, 50],
                                                                 generator=torch.Generator().manual_seed(42))
-    train_labels, test_labels = torch.utils.data.random_split(labels, [5500, 2442],
+    train_labels, test_labels = torch.utils.data.random_split(labels, [650, 50],
                                                               generator=torch.Generator().manual_seed(42))
     train_dataset = MyDataset(train_samples, train_labels)
     test_dataset = MyDataset(test_samples, test_labels)
@@ -84,14 +84,16 @@ class Oracle(pl.LightningModule):
 
         self.model = Net()
         self.aim_logger = AimLogger(
-            experiment='oracle_all_save_model'
+            experiment='oracle_iou_features'
         )
         self.save_dir_name = os.getcwd() + "/checkpoints/oracle"
         checkpoint_callback = ModelCheckpoint(
             dirpath=self.save_dir_name,
             save_last=True
         )
-        self.trainer = Trainer(gpus=-1, logger=self.aim_logger, max_epochs=200, checkpoint_callback=checkpoint_callback)
+        # self.trainer = Trainer(gpus=-1, logger=self.aim_logger, max_epochs=200, checkpoint_callback=checkpoint_callback)
+        self.trainer = Trainer(gpus=-1, logger=self.aim_logger, max_epochs=200)
+
 
         self.global_info = {i: {
             "tp": 0,
@@ -134,11 +136,11 @@ class Oracle(pl.LightningModule):
 
     def training_step(self, batch, batch_inx):
         inputs, labels = batch
-        outputs = self.forward(inputs).reshape(-1, 1, 1988)
+        outputs = self.forward(inputs).reshape(-1, 1, 100)
         loss = self.bce_loss(outputs, labels.float())
         if self.current_epoch == 199:
             for i in range(len(outputs)):
-                self.compute_accuracy(outputs[i][0].cpu().detach().numpy()>0.5, labels[i][0].cpu().detach().numpy(),
+                self.compute_accuracy(outputs[i][0].cpu().detach().numpy()>0.5, labels[i][0].cpu().detach().numpy()>0.5,
                                       self.train_cl_masks[i])
 
         self.logger.experiment.track(loss.item(), name='training_loss')
@@ -150,10 +152,10 @@ class Oracle(pl.LightningModule):
 
     def test_step(self, batch, batch_inx):
         inputs, labels = batch
-        outputs = self.forward(inputs).reshape(-1, 1, 1988)
+        outputs = self.forward(inputs).reshape(-1, 1, 100)
 
         for i in range(len(outputs)):
-            self.compute_accuracy(outputs[i][0].cpu().detach().numpy() > 0.5, labels[i][0].cpu().detach().numpy(),
+            self.compute_accuracy(outputs[i][0].cpu().detach().numpy() > 0.5, labels[i][0].cpu().detach().numpy() > 0.5,
                                   self.test_cl_masks[i], True)
 
         loss = self.bce_loss(outputs, labels.float())
@@ -165,6 +167,7 @@ class Oracle(pl.LightningModule):
 
     def fit_model(self):
         self.trainer.fit(self)
+        self.trainer.save_checkpoint("last.ckpt")
 
     def test(self):
         return self.trainer.test(self)
@@ -222,7 +225,7 @@ def inference(pred, model_path, iou_thresh=0.5):
 
 
 # if __name__ == "__main__":
-#     csv_path = '/home/hkhachatrian/SSL-playground/session_data/5L53Vy04iImX6naGoqdy/base/widerperson_base_3_from_coco_0_first_oracle_random_dl/predictions_on_unlabeled.csv'
+#     csv_path = '/home/hkhachatrian/SSL-playground/session_data/5L53Vy04iImX6naGoqdy/base/widerperson_base_3_from_coco_0_features_wp_stage3/predictions_on_unlabeled.csv'
 #     label_root = '/home/hkhachatrian/SSL-playground/session_data/5L53Vy04iImX6naGoqdy/base/labels/'
 
 #     samples, selected_pseudo_labels, train_cl_masks, test_cl_masks = get_dataset(csv_path, label_root, 5500)
