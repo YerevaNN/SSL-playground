@@ -15,16 +15,16 @@ import os
 
 
 class Net(nn.Module):
-    def __init__(self, feature_size=6):
+    def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(1, 32, 3, padding=1)
-        self.conv2 = nn.Conv2d(32, 32, 3, padding=1)
-        self.conv3 = nn.Conv2d(32, 32, 3, padding=1)
-        self.conv4 = nn.Conv2d(32, 32, 3, padding=1)
-        self.conv5 = nn.Conv2d(32, 32, 3, padding=1)
-        self.conv6 = nn.Conv2d(32, 32, 3, padding=1)
-        self.conv7 = nn.Conv2d(32, 1, 3, padding=1)
-        self.conv8 = nn.Conv2d(1, 1, (feature_size, 1))
+        self.conv1 = nn.Conv2d(100, 128, 3, padding=2, stride=1) # 100x1030x1 -> 128x1032x3
+        self.conv2 = nn.Conv2d(128, 64, 5, padding=1, stride=3) # 128x1032x3 -> 64x344x1
+        self.conv3 = nn.Conv2d(64, 32, 3, padding=(2, 1), stride=3) # 64x344x1 -> 32x116x1
+        self.conv4 = nn.Conv2d(32, 32, 3, padding=(2, 1), stride=3) # 32x116x1 -> 32x40x1
+        self.conv5 = nn.Conv2d(32, 32, 3, padding=1, stride=1) # 32x40x1 -> 32x40x1
+        self.conv6 = nn.Conv2d(32, 32, 3, padding=1, stride=1) # 32x40x1 -> 32x40x1
+        self.conv7 = nn.Conv2d(32, 1, 3, padding=1, stride=1) # 32x40x1 -> 32x40x1
+        self.conv8 = nn.Conv2d(1, 100, (40, 1)) # 32x40x1 -> 100x1x1
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -60,7 +60,7 @@ class MyDataset(Dataset):
 
 def get_train_test_loaders(samples, labels):
     samples = torch.transpose(torch.FloatTensor(samples), 1, 2)
-    samples = samples.reshape(-1, 1, 6, 1988)
+    samples = samples.reshape(-1, 1, 1030, 1988)
 
     labels = torch.tensor(labels)
     labels = torch.reshape(labels, (7942, 1, 1988))
