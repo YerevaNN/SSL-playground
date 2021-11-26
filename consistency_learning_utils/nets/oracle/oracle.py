@@ -32,7 +32,7 @@ def oracle_all(pred, truth):
                 pred_score = pred[p][5]
                 IOU = bb_intersection_over_union(truth_bbox, pred_bbox)
                 if IOU >= IOU_threshold:
-                    selected_pseudo_labels[p] = IOU
+                    selected_pseudo_labels[p] = 1
                     if pred[p][5] < min_score:
                         min_score = pred[p][5]
         #                     if IOU >= bestIOU:
@@ -139,10 +139,10 @@ def get_dataset(csv_path, label_root, split_idx):
 
         selected_pseudo_label, _ = oracle_all(preds, gt)
         selected_pseudo_labels.append(selected_pseudo_label)
-
+    empty_box = [0]*6
     for s in range(len(samples)):
         for k in range(len(samples[s]), max_pred_len):
-            samples[s].append([0, 0, 0, 0, 0, 0])
+            samples[s].append(empty_box)
             selected_pseudo_labels[s].append(0)
 
     return samples, selected_pseudo_labels, train_cl_masks, test_cl_masks
@@ -192,8 +192,8 @@ def process_data(csv_path, label_root):
     for i in range(len(image_names)):
         pred = [processed_bboxes[i][0], processed_bboxes[i][1], processed_bboxes[i][2], processed_bboxes[i][3],
                 int(classes[i]), confidences[i]]
-        for k in range(len(processed_features[i])):
-            pred.append(processed_features[i][k])
+       # for k in range(len(processed_features[i])):
+           # pred.append(processed_features[i][k])
         predictions[image_names[i]].append(pred)
 
     images = list(predictions.keys())

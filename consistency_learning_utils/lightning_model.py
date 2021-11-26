@@ -5,9 +5,6 @@ import numpy as np
 import json
 
 import torch
-# from torch._C import T
-# from torch._C import contiguous_format
-# torch.use_deterministic_algorithms(True)  # not in this version?
 from .nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
 import torch.optim as optim
 
@@ -240,8 +237,10 @@ def change_prediction_format(unlab_pred):
         boxes = sample_pred['boxes'].cpu()
         labels = sample_pred['labels'].cpu().unsqueeze(1)
         scores = sample_pred['scores'].cpu().unsqueeze(1)
+        features = sample_pred['features'].cpu()
         boxes = torch.cat((boxes, labels), dim = 1)
         boxes = torch.cat((boxes, scores), dim = 1)
+        boxes = torch.cat((boxes, features), dim = 1)
         new_pred.append(boxes)
     return new_pred
 
@@ -806,8 +805,8 @@ class STAC(pl.LightningModule):
             return
         x, y, image_paths = batch
 
-        student_y_hat = self.student_forward(x, image_paths=image_paths)
-        teacher_y_hat = self.teacher_forward(x, image_paths=image_paths)
+        student_y_hat = self.student_forward(x, image_paths)
+        teacher_y_hat = self.teacher_forward(x, image_paths)
 
         batch_size = len(student_y_hat)
 

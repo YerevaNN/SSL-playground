@@ -560,11 +560,8 @@ class RoIHeads(torch.nn.Module):
         if self.training:
             proposals, matched_idxs, labels, regression_targets = self.select_training_samples(proposals, targets)
 
-        if not self.training:
-            new_proposals = [targets[i]['boxes'] for i in range(len(targets))]
-            box_features = self.box_roi_pool(features, new_proposals, image_shapes)
-        else:
-            box_features = self.box_roi_pool(features, proposals, image_shapes)
+        box_features = self.box_roi_pool(features, proposals, image_shapes)
+
         box_features = self.box_head(box_features)
         class_logits, box_regression = self.box_predictor(box_features)
 

@@ -22,6 +22,7 @@ parser.add_argument('--seed', type=int, default=None)
 parser.add_argument('--learning_rate', type=float, default=None)
 parser.add_argument('--oracle_iou_threshold', type=float, default=None)
 parser.add_argument('--lr_schedule', type=str, default=None)
+parser.add_argument('--oracle_model_path', type=str, default=None)
 parser.add_argument('--student_learning_rate', type=float, default=None)
 parser.add_argument('--student_lr_schedule', type=str, default=None)
 parser.add_argument('--student_warmup_steps', type=int, default=None)
@@ -88,7 +89,7 @@ if __name__ == "__main__":
                 'initialization', 'reuse_classifier', 'check_val_steps', 'batch_size',
                 'box_score_thresh', 'augmentation', 'teacher_init_path', 'teacher_init_skip_last_layer',
                 'total_steps_teacher_initial', 'total_steps_student_initial', 'skip_burn_in',
-                'oracle_iou_threshold']:
+                'oracle_iou_threshold', 'oracle_model_path']:
         if key in argsdict and argsdict[key] is not None:
             print("Overriding {} to {}".format(key, argsdict[key]))
             hparams[key] = argsdict[key]
