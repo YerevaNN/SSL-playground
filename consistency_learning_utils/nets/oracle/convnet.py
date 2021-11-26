@@ -58,16 +58,16 @@ class MyDataset(Dataset):
         return sample, target
 
 
-def get_train_test_loaders(samples, labels):
+def get_train_test_loaders(samples, labels, split_idx):
     samples = torch.transpose(torch.FloatTensor(samples), 1, 2)
-    samples = samples.reshape(-1, 1, 6, 100)
+    samples = torch.unsqueeze(samples, dim=0)
 
     labels = torch.tensor(labels)
     labels = torch.unsqueeze(labels, dim=1)
     labels = torch.unsqueeze(labels, dim=1)
 
-    train_samples, test_samples = samples[:650], samples[650:]
-    train_labels, test_labels = labels[:650], labels[650:]
+    train_samples, test_samples = samples[:split_idx], samples[split_idx:]
+    train_labels, test_labels = labels[:split_idx], labels[split_idx:]
     
     train_dataset = MyDataset(train_samples, train_labels)
     test_dataset = MyDataset(test_samples, test_labels)
@@ -79,19 +79,21 @@ def get_train_test_loaders(samples, labels):
 
 
 class Oracle(pl.LightningModule):
-    def __init__(self):
+    def __init__(self, experiment_name):
         super().__init__()
 
         self.model = Net()
         self.aim_logger = AimLogger(
-            experiment='oracle_bbox_binary'
+            experiment=experiment_name
         )
-        self.save_dir_name = os.getcwd() + "/checkpoints"
+        self.save_dir_name = os.getcwd() + "/checkpoints/{}".format(experiment_name)
         checkpoint_callback = ModelCheckpoint(
             dirpath=self.save_dir_name,
             save_top_k=-1,
             period=25,
-            save_last=True
+            save_last=True,
+            monitor='val_loss',
+            mode='min'
         )
         self.trainer = Trainer(gpus=-1, logger=self.aim_logger, max_epochs=200,
                                callbacks=[checkpoint_callback])
@@ -109,11 +111,11 @@ class Oracle(pl.LightningModule):
             "fn": 0
         } for i in [1, 2, 3]}
 
-    def set_datasets(self, samples, labels, train_cl_masks, test_cl_masks):
+    def set_datasets(self, samples, labels, train_cl_masks, test_cl_masks, split_idx):
         self.train_cl_masks = train_cl_masks
         self.test_cl_masks = test_cl_masks
 
-        self.train_loader, self.test_loader = get_train_test_loaders(samples, labels)
+        self.train_loader, self.test_loader = get_train_test_loaders(samples, labels, split_idx)
 
     def load_from_path(self, path):
         sd = torch.load(path)['state_dict']
@@ -130,6 +132,9 @@ class Oracle(pl.LightningModule):
         return self.train_loader
 
     def test_dataloader(self):
+        return self.test_loader
+
+    def val_dataloader(self):
         return self.test_loader
 
     def configure_optimizers(self):
@@ -161,8 +166,6 @@ class Oracle(pl.LightningModule):
         inputs, labels = batch
         outputs = self.forward(inputs)
 
-        print("y" + "eeeeee"*10 + "t", outputs.shape, labels.float().shape)
-
         for i in range(len(outputs)):
             self.compute_accuracy(outputs[i][0][0].cpu().detach().numpy() > 0.5, labels[i][0][0].cpu().detach().numpy() > 0.5,
                                   self.test_cl_masks[i], True)
@@ -173,6 +176,13 @@ class Oracle(pl.LightningModule):
 
         return {'loss': loss}
 
+    def validation_step(self, batch, batch_idx):
+        inputs, labels = batch
+        outputs = self.forward(inputs)
+        loss = self.bce_loss(outputs, labels.float())
+
+        self.logger.experiment.track(loss.item(), name='val_loss')
+        return {'val_loss': loss}
 
     def fit_model(self):
         self.trainer.fit(self)
@@ -241,15 +251,3 @@ def inference(pred, model_path, iou_thresh=0.5):
     output = model(pred)
     selected_predictions = select_pls(output, boxes_per_image, old_pred, iou_thresh)
     return selected_predictions
-
-
-# if __name__ == "__main__":
-#     csv_path = '/home/hkhachatrian/SSL-playground/session_data/5L53Vy04iImX6naGoqdy/base/widerperson_base_3_from_coco_0_features_wp_stage3/predictions_on_unlabeled.csv'
-#     label_root = '/home/hkhachatrian/SSL-playground/session_data/5L53Vy04iImX6naGoqdy/base/labels/'
-
-#     samples, selected_pseudo_labels, train_cl_masks, test_cl_masks = get_dataset(csv_path, label_root, 5500)
-
-#     model = Oracle()
-#     model.set_datasets(samples, selected_pseudo_labels, train_cl_masks, test_cl_masks)
-#     model.fit_model()
-#     model.test()

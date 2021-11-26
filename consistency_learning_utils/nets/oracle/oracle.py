@@ -32,7 +32,7 @@ def oracle_all(pred, truth):
                 pred_score = pred[p][5]
                 IOU = bb_intersection_over_union(truth_bbox, pred_bbox)
                 if IOU >= IOU_threshold:
-                    selected_pseudo_labels[p] = 1
+                    selected_pseudo_labels[p] = IOU
                     if pred[p][5] < min_score:
                         min_score = pred[p][5]
         #                     if IOU >= bestIOU:
@@ -47,7 +47,6 @@ def oracle_all(pred, truth):
 
 def oracle_top(pred, truth):
     selected_pseudo_labels = [0] * len(pred)
-    #     selected_pseudo_labels = np.zeros(len(pred), dtype=int)
     IOU_threshold = 0.5
     class_scores = {}
 
@@ -139,7 +138,7 @@ def get_dataset(csv_path, label_root, split_idx):
 
         selected_pseudo_label, _ = oracle_all(preds, gt)
         selected_pseudo_labels.append(selected_pseudo_label)
-    empty_box = [0]*6
+    empty_box = [0]*len(samples[0][0])
     for s in range(len(samples)):
         for k in range(len(samples[s]), max_pred_len):
             samples[s].append(empty_box)
@@ -155,21 +154,6 @@ def process_data(csv_path, label_root):
     classes = df['class'].to_list()
     confidences = df['confidence'].to_list()
     features = df['features'].to_list()
-
-    # new_df = pd.DataFrame({}, columns=['step', 'img_path', 'confidence', 'class', 'bbox', 'features'])
-    # for im_name in image_names:
-    #     subset_df = df[df["img_path"] == im_name]
-    #     steps = subset_df['step'].to_list()
-    #     steps = sorted(list(set(steps)))
-    #     min_step = steps[0]
-    #     subsubset_df = subset_df[subset_df['step'] == min_step]
-    #     new_df = pd.concat([new_df, subsubset_df])
-    #
-    # image_names = new_df['img_path'].to_list()
-    # bboxes = new_df['bbox'].to_list()
-    # classes = new_df['class'].to_list()
-    # confidences = new_df['confidence'].to_list()
-    # features = new_df['features'].to_list()
 
     processed_bboxes = []
     for box in bboxes:
@@ -192,8 +176,8 @@ def process_data(csv_path, label_root):
     for i in range(len(image_names)):
         pred = [processed_bboxes[i][0], processed_bboxes[i][1], processed_bboxes[i][2], processed_bboxes[i][3],
                 int(classes[i]), confidences[i]]
-       # for k in range(len(processed_features[i])):
-           # pred.append(processed_features[i][k])
+        for k in range(len(processed_features[i])):
+            pred.append(processed_features[i][k])
         predictions[image_names[i]].append(pred)
 
     images = list(predictions.keys())
