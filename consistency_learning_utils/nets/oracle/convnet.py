@@ -60,7 +60,7 @@ class MyDataset(Dataset):
 
 def get_train_test_loaders(samples, labels, split_idx):
     samples = torch.transpose(torch.FloatTensor(samples), 1, 2)
-    samples = torch.unsqueeze(samples, dim=0)
+    samples = torch.unsqueeze(samples, dim=1)
 
     labels = torch.tensor(labels)
     labels = torch.unsqueeze(labels, dim=1)
