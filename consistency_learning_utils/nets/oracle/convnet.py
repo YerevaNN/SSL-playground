@@ -198,9 +198,7 @@ class Oracle(pl.LightningModule):
             fscore = self.f1_score(self.global_info_val[c]['tp'], self.global_info_val[c]['fp'],
                                    self.global_info_val[c]['fn'])
             fscore_per_class.append(fscore)
-        print(self.global_info_val)
         accuracy = sum(fscore_per_class)/len(fscore_per_class)
-        print(accuracy)
 
         self.logger.experiment.track(loss.item(), name='val_loss')
         self.logger.experiment.track(accuracy.item(), name='val_acc')
@@ -208,7 +206,8 @@ class Oracle(pl.LightningModule):
         return {'val_loss': loss, 'val_acc': accuracy}
 
     def validation_epoch_end(self, results):
-        print(results['val_acc'])
+        for result in results:
+            print(result)
 
     def fit_model(self):
         self.trainer.fit(self)
