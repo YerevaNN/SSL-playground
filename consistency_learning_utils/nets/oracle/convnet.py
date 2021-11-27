@@ -90,15 +90,15 @@ class Oracle(pl.LightningModule):
         checkpoint_callback = ModelCheckpoint(
             dirpath=self.save_dir_name,
             save_top_k=-1,
-            period=25,
+            # period=25,
             save_last=True,
-            monitor='val_loss',
-            mode='min'
+            monitor='val_acc',
+            mode='max'
         )
         self.trainer = Trainer(gpus=-1, logger=self.aim_logger, max_epochs=200,
                                callbacks=[checkpoint_callback])
 
-
+    def global_info_init(self):
         self.global_info = {i: {
             "tp": 0,
             "fp": 0,
@@ -106,6 +106,11 @@ class Oracle(pl.LightningModule):
         } for i in [1, 2, 3]}
 
         self.global_info_test = {i: {
+            "tp": 0,
+            "fp": 0,
+            "fn": 0
+        } for i in [1, 2, 3]}
+        self.global_info_val = {i: {
             "tp": 0,
             "fp": 0,
             "fn": 0
@@ -168,7 +173,7 @@ class Oracle(pl.LightningModule):
 
         for i in range(len(outputs)):
             self.compute_accuracy(outputs[i][0][0].cpu().detach().numpy() > 0.5, labels[i][0][0].cpu().detach().numpy() > 0.5,
-                                  self.test_cl_masks[i], True)
+                                  self.test_cl_masks[i], phase='test')
 
         loss = self.bce_loss(outputs, labels.float())
 
@@ -180,9 +185,23 @@ class Oracle(pl.LightningModule):
         inputs, labels = batch
         outputs = self.forward(inputs)
         loss = self.bce_loss(outputs, labels.float())
+        for i in range(len(outputs)):
+            self.compute_accuracy(outputs[i][0][0].cpu().detach().numpy() > 0.5, labels[i][0][0].cpu().detach().numpy() > 0.5,
+                                  self.test_cl_masks[i], phase='val')
+        classes = list(self.global_info_val.keys())
+        fscore_per_class = []
+        for c in classes:
+            fscore = self.f1_score(self.global_info_val[c]['tp'], self.global_info_val[c]['fp'],
+                                   self.global_info_val[c]['fn'])
+            fscore_per_class.append(fscore)
+        print(self.global_info_val)
+        accuracy = sum(fscore_per_class)/len(fscore_per_class)
+        print(accuracy)
 
         self.logger.experiment.track(loss.item(), name='val_loss')
-        return {'val_loss': loss}
+        self.logger.experiment.track(accuracy.item(), name='val_acc')
+
+        return {'val_loss': loss, 'val_acc': accuracy}
 
     def fit_model(self):
         self.trainer.fit(self)
@@ -193,9 +212,11 @@ class Oracle(pl.LightningModule):
     def on_test_end(self):
         print(self.global_info_test)
 
-    def compute_accuracy(self, y_hat, y, cl_masks, test=False):
+    def compute_accuracy(self, y_hat, y, cl_masks, phase='train'):
         classes = list(cl_masks.keys())
-        if test:
+        self.global_info_init()
+
+        if phase == 'test':
             for cl in classes:
                 self.global_info_test[cl]['tp'] += sum(y_hat[:len(cl_masks[cl])] & y[:len(cl_masks[cl])]
                                                   & cl_masks[cl])
@@ -203,13 +224,22 @@ class Oracle(pl.LightningModule):
                                                   & cl_masks[cl])
                 self.global_info_test[cl]['fn'] += sum(~y_hat[:len(cl_masks[cl])] & y[:len(cl_masks[cl])]
                                                   & cl_masks[cl])
-        else:
+        elif phase == 'train':
             for cl in classes:
                 self.global_info[cl]['tp'] += sum(y_hat[:len(cl_masks[cl])] & y[:len(cl_masks[cl])]
                                                   & cl_masks[cl])
                 self.global_info[cl]['fp'] += sum(y_hat[:len(cl_masks[cl])] & ~y[:len(cl_masks[cl])]
                                                   & cl_masks[cl])
                 self.global_info[cl]['fn'] += sum(~y_hat[:len(cl_masks[cl])] & y[:len(cl_masks[cl])]
+                                                  & cl_masks[cl])
+
+        else:
+            for cl in classes:
+                self.global_info_val[cl]['tp'] += sum(y_hat[:len(cl_masks[cl])] & y[:len(cl_masks[cl])]
+                                                  & cl_masks[cl])
+                self.global_info_val[cl]['fp'] += sum(y_hat[:len(cl_masks[cl])] & ~y[:len(cl_masks[cl])]
+                                                  & cl_masks[cl])
+                self.global_info_val[cl]['fn'] += sum(~y_hat[:len(cl_masks[cl])] & y[:len(cl_masks[cl])]
                                                   & cl_masks[cl])
 
     def f1_score(self, tp, fp, fn):
