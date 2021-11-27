@@ -103,11 +103,11 @@ if __name__ == "__main__":
             4: 3000,
             5: 8000,
             6: 13000,
-            7: 50000,
+            7: 1000,
         }
         hparams['total_steps_teacher_initial'] = teacher_steps_defaults[args.stage]
         if args.stage == 7:
-            hparams['check_val_steps'] = 5000
+            hparams['check_val_steps'] = 1000
 
     hparams['lr_drop_steps'] = int(hparams['total_steps_teacher_initial'] * 0.8)
     print("Setting lr_drop_steps to {}".format(hparams['lr_drop_steps']))

@@ -557,8 +557,8 @@ class RoIHeads(torch.nn.Module):
                 if self.has_keypoint:
                     assert t["keypoints"].dtype == torch.float32, 'target keypoints must of float type'
 
-        if self.training:
-            proposals, matched_idxs, labels, regression_targets = self.select_training_samples(proposals, targets)
+        # if self.training:
+        proposals, matched_idxs, labels, regression_targets = self.select_training_samples(proposals, targets)
 
         box_features = self.box_roi_pool(features, proposals, image_shapes)
 
@@ -566,23 +566,22 @@ class RoIHeads(torch.nn.Module):
         class_logits, box_regression = self.box_predictor(box_features)
 
         result, losses = [], {}
-        if self.training:
-            loss_classifier, loss_box_reg = fastrcnn_loss(
-                class_logits, box_regression, labels, regression_targets, self.gamma)
-            losses = dict(loss_classifier=loss_classifier, loss_box_reg=loss_box_reg)
-        else:
-            boxes, scores, labels, logits, features = self.postprocess_detections(class_logits, box_regression, box_features, proposals, image_shapes)
-            # self.make_and_dump_json(boxes, scores, labels, logits)
-            num_images = len(boxes)
-            for i in range(num_images):
-                result.append(
-                    dict(
-                        boxes=boxes[i],
-                        labels=labels[i],
-                        scores=scores[i],
-                        logits=logits[i],
-                        features=features[i],
-                    )
+
+        loss_classifier, loss_box_reg = fastrcnn_loss(
+            class_logits, box_regression, labels, regression_targets, self.gamma)
+        losses = dict(loss_classifier=loss_classifier, loss_box_reg=loss_box_reg)
+        boxes, scores, labels, logits, features = self.postprocess_detections(class_logits, box_regression, box_features, proposals, image_shapes)
+        # self.make_and_dump_json(boxes, scores, labels, logits)
+        num_images = len(boxes)
+        for i in range(num_images):
+            result.append(
+                dict(
+                    boxes=boxes[i],
+                    labels=labels[i],
+                    scores=scores[i],
+                    logits=logits[i],
+                    features=features[i],
                 )
+            )
 
         return result, losses

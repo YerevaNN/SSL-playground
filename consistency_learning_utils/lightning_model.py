@@ -5,6 +5,8 @@ import numpy as np
 import json
 
 import torch
+
+from consistency_learning_utils.nets.detection.roi_heads import fastrcnn_loss
 from .nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
 import torch.optim as optim
 
@@ -21,6 +23,7 @@ from aim.pytorch_lightning import AimLogger
 
 from .dataloader import get_train_test_loaders
 from .nets.oracle.convnet import inference
+from consistency_learning_utils.nets.detection import faster_rcnn
 
 def make_target_from_y(y):
     """
@@ -596,33 +599,27 @@ class STAC(pl.LightningModule):
             x, y, image_paths = break_batch(sup_batch)
 
         target = make_target_from_y(y)
+        self.teacher.set_is_supervised(False)
+        y_hat, losses = self.teacher(x, target, image_paths)
+        
+        predictions = change_prediction_format(y_hat)
 
-        y_hat = self.teacher(x, target, image_paths)
+        rows = []
+        for i in range(len(predictions)):
+            for p in predictions[i]:
+                bbox = [float(p[0]), float(p[1]), float(p[2]), float(p[3])]
+                feat = [float(p[i]) for i in range(6,len(p))]
+                row = [self.global_step, image_paths[i], float(p[5]), float(p[4]), bbox, feat]
+                rows.append(row)
+
+        with open(self.predictions_csv_path, 'a') as f:
+            writer = csv.writer(f)
+            writer.writerows(rows)
 
         with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
             f.write("GR={} images=({})\n".format(
                 self.global_rank, ' '.join([os.path.basename(i[2]) for i in sup_batch])))
-        return y_hat
-
-    def student_supervised_step(self, sup_batch):
-        if self.hparams['augmentation'] == 3:
-            x, y, image_paths = [], [], []
-            for i in sup_batch:
-                weak, _ = i
-                x.append(weak[0])
-                y.append(weak[1])
-                image_paths.append(weak[2])
-        else:
-            x, y, image_paths = break_batch(sup_batch)
-
-        target = make_target_from_y(y)
-        y_hat = self.student(x, target, image_paths)
-
-        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
-            f.write("Supervised GR={} images=({})\n".format(
-                self.global_rank, ' '.join([os.path.basename(i[2]) for i in sup_batch])))
-
-        return y_hat
+        return losses
 
     def student_unsupervised_step(self, unsup_batch):
         with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
@@ -657,7 +654,8 @@ class STAC(pl.LightningModule):
         for i in range(len(predictions)):
             for p in predictions[i]:
                 bbox = [float(p[0]), float(p[1]), float(p[2]), float(p[3])]
-                row = [self.global_step, unlabeled_image_paths[i], float(p[5]), float(p[4]), bbox]
+                feat = p[6:]
+                row = [self.global_step, unlabeled_image_paths[i], float(p[5]), float(p[4]), bbox, feat]
                 rows.append(row)
 
         with open(self.predictions_csv_path, 'a') as f:
@@ -728,15 +726,15 @@ class STAC(pl.LightningModule):
         sup_loss = self.teacher_supervised_step(sup_batch)
 
         loss = self.frcnn_loss(sup_loss)
-        self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(sup_loss['loss_box_reg'].item(), name='loss_box_reg',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(sup_loss['loss_objectness'].item(), name='loss_objectness',
-                                          context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(sup_loss['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(loss.item(), name='loss_sum', context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(sup_loss['loss_classifier'].item(), name='loss_classifier',
+                                        #  context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(sup_loss['loss_box_reg'].item(), name='loss_box_reg',
+                                        #  context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(sup_loss['loss_objectness'].item(), name='loss_objectness',
+                                        #   context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(sup_loss['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
+                                        #  context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(loss.item(), name='loss_sum', context={'model':self.onTeacher, 'stage':self.stage})
         return {'loss': loss}
 
     def student_training_step(self, batch_list):
@@ -744,16 +742,16 @@ class STAC(pl.LightningModule):
 
         sup_batch, unsup_batch = batch_list
         self.student.set_is_supervised(True)
-        sup_y_hat = self.student_supervised_step(sup_batch)
+        # sup_y_hat = self.student_supervised_step(sup_batch)
 
         self.student.set_is_supervised(False)
 
-        unsup_loss = self.student_unsupervised_step(unsup_batch)
+        unsup_loss = self.student_unsupervised_step(sup_batch)
 
-        sup_loss = self.frcnn_loss(sup_y_hat)
-        loss = sup_loss + self.lam * unsup_loss
-        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
-            f.write("GR={} loss={:.6f}\n".format(self.global_rank, loss))
+        # sup_loss = self.frcnn_loss(sup_y_hat)
+        loss = unsup_loss
+        # with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+        #     f.write("GR={} loss={:.6f}\n".format(self.global_rank, loss))
 
         # if self.global_step % 20 < 10 or unsup_loss.sum().item() == 0.0:
         #     loss = sup_loss
@@ -761,26 +759,26 @@ class STAC(pl.LightningModule):
         #     loss = unsup_loss
 
         # teacher_weight = self.teacher.roi_heads.box_predictor.cls_score.weight.sum().item()
-        # self.logger.experiment.track(teacher_weight, name='teacher_weight',
+        # # self.logger.experiment.track(teacher_weight, name='teacher_weight',
         #                                  context={'model':self.onTeacher, 'stage':self.stage})
         # student_weight = self.student.roi_heads.box_predictor.cls_score.weight.sum().item()
-        # self.logger.experiment.track(student_weight, name='student_weight',
+        # # self.logger.experiment.track(student_weight, name='student_weight',
         #                                  context={'model':self.onTeacher, 'stage':self.stage})
 
-        self.logger.experiment.track(sup_y_hat['loss_classifier'].item(), name='loss_classifier',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(sup_y_hat['loss_box_reg'].item(), name='loss_box_reg',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(sup_y_hat['loss_objectness'].item(), name='loss_objectness',
-                                          context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(sup_y_hat['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(sup_loss.item(), name='training_sup_loss',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(unsup_loss.item(), name='training_unsup_loss',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(loss.item(), name='loss_sum',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
+        # # self.logger.experiment.track(sup_y_hat['loss_classifier'].item(), name='loss_classifier',
+        #                                  context={'model':self.onTeacher, 'stage':self.stage})
+        # # self.logger.experiment.track(sup_y_hat['loss_box_reg'].item(), name='loss_box_reg',
+        #                                  context={'model':self.onTeacher, 'stage':self.stage})
+        # # self.logger.experiment.track(sup_y_hat['loss_objectness'].item(), name='loss_objectness',
+        #                                   context={'model':self.onTeacher, 'stage':self.stage})
+        # # self.logger.experiment.track(sup_y_hat['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
+        #                                  context={'model':self.onTeacher, 'stage':self.stage})
+        # # self.logger.experiment.track(sup_loss.item(), name='training_sup_loss',
+        #                                  context={'model':self.onTeacher, 'stage':self.stage})
+        # # self.logger.experiment.track(unsup_loss.item(), name='training_unsup_loss',
+        #                                  context={'model':self.onTeacher, 'stage':self.stage})
+        # # self.logger.experiment.track(loss.item(), name='loss_sum',
+        #                                  context={'model':self.onTeacher, 'stage':self.stage})
         return {'loss': loss}
 
     def training_step(self, batch_list, batch_idx):
@@ -885,25 +883,21 @@ class STAC(pl.LightningModule):
             # mAP1 = self.mAP.value(iou_thresholds=0.5, recall_thresholds=np.arange(0., 1.1, 0.1))['mAP']
             ious = np.arange(0.5, 1.0, 0.05)
             student_mAP2 = self.student_mAP.value(iou_thresholds=0.5)['mAP']
-            student_mAP3 = self.student_mAP.value(iou_thresholds=ious,
-                                  recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
 
-            self.logger.experiment.track(float(student_mAP2), name='map2', context={'model':False, 'stage':self.stage})
-            self.logger.experiment.track(float(student_mAP3['mAP']), name='mAP5095', context={'model':False, 'stage':self.stage})
-            for iou in ious:
-                self.logger.experiment.track(
-                    float(np.mean([x['ap'] for x in student_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
-                    context={'model':False, 'stage':self.stage})
+            # self.logger.experiment.track(float(student_mAP2), name='map2', context={'model':False, 'stage':self.stage})
+            # self.logger.experiment.track(float(student_mAP3['mAP']), name='mAP5095', context={'model':False, 'stage':self.stage})
+            # for iou in ious:
+            #     self.logger.experiment.track(
+            #         float(np.mean([x['ap'] for x in student_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
+            #         context={'model':False, 'stage':self.stage})
             teacher_mAP2 = self.teacher_mAP.value(iou_thresholds=0.5)['mAP']
-            teacher_mAP3 = self.teacher_mAP.value(iou_thresholds=ious,
-                                  recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
 
-            self.logger.experiment.track(float(teacher_mAP2), name='map2', context={'model':True, 'stage':self.stage})
-            self.logger.experiment.track(float(teacher_mAP3['mAP']), name='mAP5095', context={'model':True, 'stage':self.stage})
-            for iou in ious:
-                self.logger.experiment.track(
-                    float(np.mean([x['ap'] for x in teacher_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
-                    context={'model':True, 'stage':self.stage})
+            # self.logger.experiment.track(float(teacher_mAP2), name='map2', context={'model':True, 'stage':self.stage})
+            # self.logger.experiment.track(float(teacher_mAP3['mAP']), name='mAP5095', context={'model':True, 'stage':self.stage})
+            # for iou in ious:
+            #     self.logger.experiment.track(
+            #         float(np.mean([x['ap'] for x in teacher_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
+            #         context={'model':True, 'stage':self.stage})
 
             # val_loss as a surrogate for mAP
             val_loss = 1 - student_mAP2
@@ -1006,7 +1000,7 @@ class STAC(pl.LightningModule):
 
         else:
             raise NotImplementedError
-        self.logger.experiment.track(curLR, name='lr', context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(curLR, name='lr', context={'model':self.onTeacher, 'stage':self.stage})
 
         for pg in optimizer.param_groups:
             pg['lr'] = curLR
@@ -1048,7 +1042,7 @@ class STAC(pl.LightningModule):
         # self.load_best_teacher() # TODO I do not think this will always work
         # The best teacher is the last one, as we do not know how to measure what it the best one
 
-        if self.stage != 7:
+        if self.stage > 7:
             self.copy_student_from_current_teacher()
             for param in self.teacher.parameters():
                 param.requires_grad = False

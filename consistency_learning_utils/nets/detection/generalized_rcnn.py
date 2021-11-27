@@ -52,6 +52,7 @@ class GeneralizedRCNN(nn.Module):
                 like `scores`, `labels` and `mask` (for Mask R-CNN models).
 
         """
+        self.training = False
         if self.training and targets is None:
             raise ValueError("In training mode, targets should be passed")
         original_image_sizes = [img.shape[-2:] for img in images]
@@ -100,7 +101,5 @@ class GeneralizedRCNN(nn.Module):
         losses.update(detector_losses)
         losses.update(proposal_losses)
 
-        if self.training:
-            return losses
 
-        return detections
+        return detections, losses
