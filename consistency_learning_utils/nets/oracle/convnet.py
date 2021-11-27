@@ -197,7 +197,8 @@ class Oracle(pl.LightningModule):
         for c in classes:
             fscore = self.f1_score(self.global_info_val[c]['tp'], self.global_info_val[c]['fp'],
                                    self.global_info_val[c]['fn'])
-            fscore_per_class.append(fscore)
+            if fscore:
+                fscore_per_class.append(fscore)
         accuracy = sum(fscore_per_class)/len(fscore_per_class)
 
         self.logger.experiment.track(loss.item(), name='val_loss')
