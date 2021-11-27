@@ -206,8 +206,10 @@ class Oracle(pl.LightningModule):
         return {'val_loss': loss, 'val_acc': accuracy}
 
     def validation_epoch_end(self, results):
+        acc = []
         for result in results:
-            print(result)
+            acc.append(result['val_acc'])
+        print('acc', sum(acc)/len(acc))
 
     def fit_model(self):
         self.trainer.fit(self)
