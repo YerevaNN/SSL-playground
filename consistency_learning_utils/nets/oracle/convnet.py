@@ -155,6 +155,7 @@ class Oracle(pl.LightningModule):
         inputs, labels = batch
         outputs = self.forward(inputs)
         loss = self.bce_loss(outputs, labels.float())
+        self.global_info_init()
         if self.current_epoch == 199:
             for i in range(len(outputs)):
                 self.compute_accuracy(outputs[i][0][0].cpu().detach().numpy()>0.5, labels[i][0][0].cpu().detach().numpy()>0.5,
@@ -171,6 +172,7 @@ class Oracle(pl.LightningModule):
         inputs, labels = batch
         outputs = self.forward(inputs)
 
+        self.global_info_init()
         for i in range(len(outputs)):
             self.compute_accuracy(outputs[i][0][0].cpu().detach().numpy() > 0.5, labels[i][0][0].cpu().detach().numpy() > 0.5,
                                   self.test_cl_masks[i], phase='test')
@@ -185,6 +187,8 @@ class Oracle(pl.LightningModule):
         inputs, labels = batch
         outputs = self.forward(inputs)
         loss = self.bce_loss(outputs, labels.float())
+        self.global_info_init()
+
         for i in range(len(outputs)):
             self.compute_accuracy(outputs[i][0][0].cpu().detach().numpy() > 0.5, labels[i][0][0].cpu().detach().numpy() > 0.5,
                                   self.test_cl_masks[i], phase='val')
@@ -214,8 +218,6 @@ class Oracle(pl.LightningModule):
 
     def compute_accuracy(self, y_hat, y, cl_masks, phase='train'):
         classes = list(cl_masks.keys())
-        self.global_info_init()
-
         if phase == 'test':
             for cl in classes:
                 self.global_info_test[cl]['tp'] += sum(y_hat[:len(cl_masks[cl])] & y[:len(cl_masks[cl])]
