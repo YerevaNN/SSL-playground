@@ -176,8 +176,8 @@ def process_data(csv_path, label_root):
     for i in range(len(image_names)):
         pred = [processed_bboxes[i][0], processed_bboxes[i][1], processed_bboxes[i][2], processed_bboxes[i][3],
                 int(classes[i]), confidences[i]]
-        for k in range(len(processed_features[i])):
-            pred.append(processed_features[i][k])
+        #for k in range(len(processed_features[i])):
+            #pred.append(processed_features[i][k])
         predictions[image_names[i]].append(pred)
 
     images = list(predictions.keys())

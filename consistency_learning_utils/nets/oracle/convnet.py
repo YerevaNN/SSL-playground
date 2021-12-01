@@ -1,4 +1,5 @@
 from typing import List, Any
+from pytorch_lightning.utilities.apply_func import from_numpy
 
 import torch
 from torch import nn
@@ -24,7 +25,7 @@ class Net(nn.Module):
         self.conv5 = nn.Conv2d(32, 16, 3, padding=1, stride=1) # 32x40x100 -> 16x40x100
         self.conv6 = nn.Conv2d(16, 8, 3, padding=1, stride=1) # 16x40x100 -> 8x40x100
         self.conv7 = nn.Conv2d(8, 1, 3, padding=1, stride=1) # 8x40x100 -> 1x40x100
-        self.conv8 = nn.Conv2d(1, 1, (40, 1)) # 1x40x100 -> 1x1x100
+        self.conv8 = nn.Conv2d(1, 1, (2, 1)) # 1x40x100 -> 1x1x100
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -87,16 +88,19 @@ class Oracle(pl.LightningModule):
             experiment=experiment_name
         )
         self.save_dir_name = os.getcwd() + "/checkpoints/{}".format(experiment_name)
-        checkpoint_callback = ModelCheckpoint(
-            dirpath=self.save_dir_name,
-            save_top_k=-1,
-            # period=25,
-            save_last=True,
-            monitor='val_acc',
-            mode='max'
-        )
-        self.trainer = Trainer(gpus=-1, logger=self.aim_logger, max_epochs=200,
-                               callbacks=[checkpoint_callback])
+        os.makedirs(self.save_dir_name, exist_ok=True)
+        self.best_validation_accuracy = -1
+        # checkpoint_callback = ModelCheckpoint(
+        #     dirpath=self.save_dir_name,
+        #     save_top_k=2,
+        #     filename='{epoch}-{val_acc:.3f}',
+        #     monitor='val_acc',
+        #     save_last=True,
+        #     mode='max'
+        # )
+        self.trainer = Trainer(gpus=-1, logger=self.aim_logger, max_epochs=1000)
+                            #    callbacks=[checkpoint_callback],
+                            #    checkpoint_callback = True)
 
     def global_info_init(self):
         self.global_info = {i: {
@@ -156,7 +160,7 @@ class Oracle(pl.LightningModule):
         outputs = self.forward(inputs)
         loss = self.bce_loss(outputs, labels.float())
         self.global_info_init()
-        if self.current_epoch == 199:
+        if self.current_epoch == 999:
             for i in range(len(outputs)):
                 self.compute_accuracy(outputs[i][0][0].cpu().detach().numpy()>0.5, labels[i][0][0].cpu().detach().numpy()>0.5,
                                       self.train_cl_masks[i])
@@ -165,7 +169,7 @@ class Oracle(pl.LightningModule):
         return {'loss': loss}
 
     def training_epoch_end(self, outputs: List[Any]) -> None:
-        if self.current_epoch == 199:
+        if self.current_epoch == 999:
             print(self.global_info)
 
     def test_step(self, batch, batch_inx):
@@ -195,22 +199,36 @@ class Oracle(pl.LightningModule):
         classes = list(self.global_info_val.keys())
         fscore_per_class = []
         for c in classes:
-            fscore = self.f1_score(self.global_info_val[c]['tp'], self.global_info_val[c]['fp'],
-                                   self.global_info_val[c]['fn'])
-            if fscore:
-                fscore_per_class.append(fscore)
-        accuracy = sum(fscore_per_class)/len(fscore_per_class)
+            nvf = self.global_info_val[c]
+            tp, fp, fn = nvf['tp'], nvf['fp'], nvf['fn']
+            if tp + fp + fn == 0:
+                fscore = 0
+            else:
+                fscore = self.f1_score(tp, fp, fn)
+            fscore_per_class.append(fscore)
+        accuracy = torch.tensor(0)
+        if len(fscore_per_class):
+            accuracy = sum(fscore_per_class)/len(fscore_per_class)
 
         self.logger.experiment.track(loss.item(), name='val_loss')
-        self.logger.experiment.track(accuracy.item(), name='val_acc')
+        self.logger.experiment.track(accuracy, name='val_acc')
 
-        return {'val_loss': loss, 'val_acc': accuracy}
+        return {'val_loss': loss, 'fscores': fscore_per_class}
 
     def validation_epoch_end(self, results):
-        acc = []
+        fscores = [0 for i in range(len(results[0]['fscores']))]
         for result in results:
-            acc.append(result['val_acc'])
-        print('acc', sum(acc)/len(acc))
+            fs = result['fscores']
+            fscores = [fs[i] + fscores[i] for i in range(len(fs))]
+        fscores = [i/len(results) for i in fscores]
+        print('fscores', fscores, '\n')
+        accuracy = sum(fscores)/len(fscores)
+        print('accuracy', accuracy, '\n')
+        if accuracy > self.best_validation_accuracy:
+            print('achieved top validation accuracy, saving the checkpoint')
+            self.best_validation_accuracy = accuracy
+            torch.save(self.model.state_dict(), os.path.join(self.save_dir_name, 'best.ckpt'))
+        return {'val_acc': accuracy}
 
     def fit_model(self):
         self.trainer.fit(self)
