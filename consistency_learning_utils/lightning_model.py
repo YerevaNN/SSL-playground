@@ -599,8 +599,8 @@ class STAC(pl.LightningModule):
             x, y, image_paths = break_batch(sup_batch)
 
         target = make_target_from_y(y)
-        self.teacher.set_is_supervised(False)
-        y_hat, losses = self.teacher(x, target, image_paths)
+        self.student.set_is_supervised(False)
+        y_hat, losses = self.student(x, target, image_paths)
         
         predictions = change_prediction_format(y_hat)
 
@@ -683,7 +683,6 @@ class STAC(pl.LightningModule):
             if selected_labels_of_image.shape[0] > 0:
                 non_zero_boxes.append(i)
 
-            # TODO move to the device of the model
             pseudo_boxes_confident += selected_labels_of_image.shape[0]
 
             tensor_boxes = torch.tensor(target_boxes).float().cuda()
@@ -1023,6 +1022,9 @@ class STAC(pl.LightningModule):
         return {'optimizer': optimizer}
 
     def fit_model(self):
+        self.copy_student_from_current_teacher()
+        for param in self.teacher.parameters(): # TODO remove
+            param.requires_grad = False
         if self.hparams['teacher_init_path']:
             print("Loading teacher model from: {}".format(self.hparams['teacher_init_path']))
             self.load_checkpoint_teacher(self.hparams['teacher_init_path'], self.hparams['teacher_init_skip_last_layer'])
