@@ -601,8 +601,10 @@ class STAC(pl.LightningModule):
         target = make_target_from_y(y)
         self.student.set_is_supervised(False)
         y_hat, losses = self.student(x, target, image_paths)
-        
-        predictions = change_prediction_format(y_hat)
+        self.teacher.eval()
+        y_hat_t, _ = self.teacher(x, target)
+       
+        predictions = change_prediction_format(y_hat_t)
 
         rows = []
         for i in range(len(predictions)):
