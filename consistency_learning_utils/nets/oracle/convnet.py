@@ -25,7 +25,7 @@ class Net(nn.Module):
         self.conv5 = nn.Conv2d(32, 16, 3, padding=1, stride=1) # 32x40x100 -> 16x40x100
         self.conv6 = nn.Conv2d(16, 8, 3, padding=1, stride=1) # 16x40x100 -> 8x40x100
         self.conv7 = nn.Conv2d(8, 1, 3, padding=1, stride=1) # 8x40x100 -> 1x40x100
-        self.conv8 = nn.Conv2d(1, 1, (2, 1)) # 1x40x100 -> 1x1x100
+        self.conv8 = nn.Conv2d(1, 1, (40, 1)) # 1x40x100 -> 1x1x100
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
