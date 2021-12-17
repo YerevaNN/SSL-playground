@@ -231,13 +231,13 @@ def oracle2(pred, truth, IOU_threshold=0.7, conf_threshold=-1.0):
     return selected_pseudo_labels
 
 
-def change_prediction_format(unlab_pred):
+def change_prediction_format(unlab_pred, phd_pred):
     new_pred = []
-    for sample_pred in unlab_pred:
+    for i, sample_pred in enumerate(unlab_pred):
         boxes = sample_pred['boxes'].cpu()
         labels = sample_pred['labels'].cpu().unsqueeze(1)
         scores = sample_pred['scores'].cpu().unsqueeze(1)
-        features = sample_pred['features'].cpu()
+        features = phd_pred[i].cpu()
         boxes = torch.cat((boxes, labels), dim = 1)
         boxes = torch.cat((boxes, scores), dim = 1)
         boxes = torch.cat((boxes, features), dim = 1)
@@ -647,6 +647,14 @@ class STAC(pl.LightningModule):
 
         self.teacher.eval()
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+        teacher_boxes = []
+        for sample_pred in unlab_pred:
+            cur_boxes = sample_pred['boxes']
+            teacher_boxes.append(cur_boxes)
+        self.phd.eval()
+        phd_pred = self.phd.forward(unlabeled_x, teacher_boxes=teacher_boxes)
+        phd_pred = torch.split(phd_pred, [x.shape[0] for x in teacher_boxes])
+
         # save_image(unlabeled_x[0], 'unlabeled.png')
         # save_image(augmented_x[0], 'augmented.png')
 
@@ -655,18 +663,7 @@ class STAC(pl.LightningModule):
 
         non_zero_boxes = []
         target = []
-        predictions = change_prediction_format(unlab_pred)
-
-        rows = []
-        for i in range(len(predictions)):
-            for p in predictions[i]:
-                bbox = [float(p[0]), float(p[1]), float(p[2]), float(p[3])]
-                row = [self.global_step, unlabeled_image_paths[i], float(p[5]), float(p[4]), bbox]
-                rows.append(row)
-
-        with open(self.predictions_csv_path, 'a') as f:
-            writer = csv.writer(f)
-            writer.writerows(rows)
+        predictions = change_prediction_format(unlab_pred, phd_pred)
 
         selected_pseudo_labels = filter_predictions(self.hparams['thresholding_method'], 
                                                     predictions, truth=unlabeled_y,
