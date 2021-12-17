@@ -357,6 +357,7 @@ class STAC(pl.LightningModule):
             class_num=self.hparams['class_num'],
             gamma=self.hparams['gamma'],
             box_score_thresh=self.hparams['box_score_thresh'])
+        self.phd.eval()
 
         self.aim_logger = AimLogger(
             experiment=self.hparams['version_name']
@@ -602,6 +603,22 @@ class STAC(pl.LightningModule):
         target = make_target_from_y(y)
 
         y_hat = self.teacher(x, target, image_paths)
+        self.phd.eval()
+        phd_predictions = self.phd(x, target, image_paths)
+
+        predictions = change_prediction_format(phd_predictions)
+
+        rows = []
+        for i in range(len(predictions)):
+            for p in predictions[i]:
+                bbox = [float(p[0]), float(p[1]), float(p[2]), float(p[3])]
+                feat = [float(p[i]) for i in range(6,len(p))]
+                row = [self.global_step, image_paths[i], float(p[5]), float(p[4]), bbox, feat]
+                rows.append(row)
+
+        with open(self.predictions_csv_path, 'a') as f:
+            writer = csv.writer(f)
+            writer.writerows(rows)
 
         with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
             f.write("GR={} images=({})\n".format(
@@ -656,17 +673,6 @@ class STAC(pl.LightningModule):
         non_zero_boxes = []
         target = []
         predictions = change_prediction_format(unlab_pred)
-
-        rows = []
-        for i in range(len(predictions)):
-            for p in predictions[i]:
-                bbox = [float(p[0]), float(p[1]), float(p[2]), float(p[3])]
-                row = [self.global_step, unlabeled_image_paths[i], float(p[5]), float(p[4]), bbox]
-                rows.append(row)
-
-        with open(self.predictions_csv_path, 'a') as f:
-            writer = csv.writer(f)
-            writer.writerows(rows)
 
         selected_pseudo_labels = filter_predictions(self.hparams['thresholding_method'], 
                                                     predictions, truth=unlabeled_y,

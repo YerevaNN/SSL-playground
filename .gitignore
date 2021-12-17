@@ -7,3 +7,4 @@ env.list
 .aim*
 session_data
 *.log
+bak.aim/*
