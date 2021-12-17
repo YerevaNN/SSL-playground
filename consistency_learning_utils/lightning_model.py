@@ -350,9 +350,13 @@ class STAC(pl.LightningModule):
             class_num=self.hparams['class_num'],
             gamma=self.hparams['gamma'],
             box_score_thresh=self.hparams['box_score_thresh'])
-
-        # self.teacher.cuda()
-        # self.student.cuda()
+        
+        self.phd = model_changed_classifier(
+            initialize='full',
+            reuse_classifier=self.hparams['reuse_classifier'],
+            class_num=self.hparams['class_num'],
+            gamma=self.hparams['gamma'],
+            box_score_thresh=self.hparams['box_score_thresh'])
 
         self.aim_logger = AimLogger(
             experiment=self.hparams['version_name']
