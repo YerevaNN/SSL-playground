@@ -126,7 +126,7 @@ def get_dataset(csv_path, label_root, split_idx):
     selected_pseudo_labels = []
     samples = []
 
-    max_pred_len = 100
+    max_pred_len = 550
     for image in image_paths:
 
         preds = predictions[image]

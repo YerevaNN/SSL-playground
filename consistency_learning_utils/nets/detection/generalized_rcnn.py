@@ -14,7 +14,6 @@ from torch import nn
 class GeneralizedRCNN(nn.Module):
     """
     Main class for Generalized R-CNN.
-
     Arguments:
         backbone (nn.Module):
         rpn (nn.Module):
@@ -39,18 +38,16 @@ class GeneralizedRCNN(nn.Module):
     def set_save_logits(self, save_logits):
         self.save_logits = save_logits
 
-    def forward(self, images, targets=None, image_paths=None):
+    def forward(self, images, targets=None, image_paths=None, teacher_boxes=None):
         """
         Arguments:
             images (list[Tensor]): images to be processed
             targets (list[Dict[Tensor]]): ground-truth boxes present in the image (optional)
-
         Returns:
             result (list[BoxList] or dict[Tensor]): the output from the model.
                 During training, it returns a dict[Tensor] which contains the losses.
                 During testing, it returns list[BoxList] contains additional fields
                 like `scores`, `labels` and `mask` (for Mask R-CNN models).
-
         """
         if self.training and targets is None:
             raise ValueError("In training mode, targets should be passed")
@@ -62,8 +59,10 @@ class GeneralizedRCNN(nn.Module):
         if isinstance(features, torch.Tensor):
             features = OrderedDict([(0, features)])
         proposals, proposal_losses = self.rpn(images, features, targets)
-
-        detections, detector_losses = self.roi_heads(features, proposals, images.image_sizes, targets)
+        if teacher_boxes is not None:
+            return self.roi_heads(features, teacher_boxes, images.image_sizes, targets, only_features=True)
+        else:
+            detections, detector_losses = self.roi_heads(features, proposals, images.image_sizes, targets)
         detections = self.transform.postprocess(detections, images.image_sizes, original_image_sizes)
 
 
