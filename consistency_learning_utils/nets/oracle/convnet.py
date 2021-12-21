@@ -127,12 +127,13 @@ class Oracle(pl.LightningModule):
         self.train_loader, self.test_loader = get_train_test_loaders(samples, labels, split_idx)
 
     def load_from_path(self, path):
-        sd = torch.load(path)['state_dict']
-        new_sd = {}
-        for key in sd.keys():
-            new_key = key[6:]
-            new_sd[new_key] = sd[key]
-        self.model.load_state_dict(new_sd)
+        sd = torch.load(path)
+        self.model.load_state_dict(sd)
+        # new_sd = {}
+        # for key in sd.keys():
+        #     new_key = key[6:]
+        #     new_sd[new_key] = sd[key]
+        # self.model.load_state_dict(new_sd)
 
     def forward(self, x):
         return self.model(x)
@@ -297,8 +298,8 @@ def select_pls(output, boxes_per_image, pred, iou_thresh):
         new_pred.append(new_p)
     return new_pred
 
-def inference(pred, model_path, iou_thresh=0.5):
-    model = Oracle()
+def inference(pred, model_path, iou_thresh=0.5, experiment_name=""):
+    model = Oracle(experiment_name)
     model.cuda()
     model.load_from_path(model_path)
     old_pred = [torch.clone(p) for p in pred]

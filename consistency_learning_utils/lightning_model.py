@@ -245,7 +245,8 @@ def change_prediction_format(unlab_pred, phd_pred):
     return new_pred
 
 
-def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=None, iou_thresh=None, model_path=None):
+def filter_predictions(type, pred, class_num=None, truth=None, conf=None,
+                       gamma=None, iou_thresh=None, model_path=None, experiment_name=None):
     if type == 'constant':
         if conf is not None:
             selected_pseudo_labels = constant_thresholding(pred, conf)
@@ -269,7 +270,7 @@ def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=
             raise NotImplementedError
     elif type == 'convnet':
         if iou_thresh is not None and model_path is not None:
-            selected_pseudo_labels = inference(pred, model_path, iou_thresh=iou_thresh)
+            selected_pseudo_labels = inference(pred, model_path, iou_thresh=iou_thresh, experiment_name=experiment_name)
         else:
             raise NotImplementedError
     else:
@@ -671,7 +672,8 @@ class STAC(pl.LightningModule):
                                                     conf=self.hparams['confidence_threshold'],
                                                     gamma=self.hparams['dt_gamma'],
                                                     iou_thresh=self.hparams['oracle_iou_threshold'],
-                                                    model_path=self.hparams['oracle_model_path'])
+                                                    model_path=self.hparams['oracle_model_path'],
+                                                    experiment_name=self.hparams['experiment_name'])
 
 
         for i, selected_labels_of_image in enumerate(selected_pseudo_labels):

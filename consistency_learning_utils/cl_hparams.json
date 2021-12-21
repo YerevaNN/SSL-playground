@@ -31,7 +31,7 @@
     "thresholding_method": "dynamic",
     "box_score_thresh": 0.005,
     "EMA_keep_rate": 0.996,
-    "batch_size": 5,
+    "batch_size": 4,
     "gradient_clip_threshold": 1,
     "gamma": 0,
 
