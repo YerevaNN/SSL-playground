@@ -234,12 +234,19 @@ def change_prediction_format(unlab_pred, phd_pred):
     for i, sample_pred in enumerate(unlab_pred):
         boxes = sample_pred['boxes'].cpu()
         labels = sample_pred['labels'].cpu().unsqueeze(1)
+        labels = labels.repeat(1, 7)
+        labels = labels.unsqueeze(2)
+        labels = labels.repeat(1, 1, 7)
+        labels = labels.unsqueeze(1)
         scores = sample_pred['scores'].cpu().unsqueeze(1)
+        scores = scores.repeat(1, 7)
+        scores = scores.unsqueeze(2)
+        scores = scores.repeat(1, 1, 7)
+        scores = scores.unsqueeze(1)
         features = phd_pred[i].cpu()
-        boxes = torch.cat((boxes, labels), dim = 1)
-        boxes = torch.cat((boxes, scores), dim = 1)
-        boxes = torch.cat((boxes, features), dim = 1)
-        new_pred.append(boxes)
+        features = torch.cat((labels, features), dim=1)
+        features = torch.cat((scores, features), dim=1)
+        new_pred.append((boxes, features))
     return new_pred
 
 
@@ -665,15 +672,17 @@ class STAC(pl.LightningModule):
         
         rows = []
         for i in range(len(predictions)):
-            for p in predictions[i]:
-                bbox = [float(p[0]), float(p[1]), float(p[2]), float(p[3])]
-                feat = [float(p[i]) for i in range(6,len(p))]
-                row = [self.global_step, unlabeled_image_paths[i], float(p[5]), float(p[4]), bbox, feat]
+            for j, p in enumerate(predictions[i][1]):
+                bbox = predictions[i][0][j]
+                feat = p
+                row = [self.global_step, unlabeled_image_paths[i], float(p[0][0][0]), float(p[1][0][0]), bbox, feat]
                 rows.append(row)
 
         with open(self.predictions_csv_path, 'a') as f:
             writer = csv.writer(f)
             writer.writerows(rows)
+        
+        return 0 * augmented_x[0].new(1).squeeze()
 
         selected_pseudo_labels = filter_predictions(self.hparams['thresholding_method'], 
                                                     predictions, truth=unlabeled_y,
@@ -778,20 +787,20 @@ class STAC(pl.LightningModule):
         # self.logger.experiment.track(student_weight, name='student_weight',
         #                                  context={'model':self.onTeacher, 'stage':self.stage})
 
-        self.logger.experiment.track(sup_y_hat['loss_classifier'].item(), name='loss_classifier',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(sup_y_hat['loss_box_reg'].item(), name='loss_box_reg',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(sup_y_hat['loss_objectness'].item(), name='loss_objectness',
-                                          context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(sup_y_hat['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(sup_loss.item(), name='training_sup_loss',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(unsup_loss.item(), name='training_unsup_loss',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(loss.item(), name='loss_sum',
-                                         context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(sup_y_hat['loss_classifier'].item(), name='loss_classifier',
+        #                                  context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(sup_y_hat['loss_box_reg'].item(), name='loss_box_reg',
+        #                                  context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(sup_y_hat['loss_objectness'].item(), name='loss_objectness',
+        #                                   context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(sup_y_hat['loss_rpn_box_reg'].item(), name='loss_rpn_box_reg',
+        #                                  context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(sup_loss.item(), name='training_sup_loss',
+        #                                  context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(unsup_loss.item(), name='training_unsup_loss',
+        #                                  context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(loss.item(), name='loss_sum',
+        #                                  context={'model':self.onTeacher, 'stage':self.stage})
         return {'loss': loss}
 
     def training_step(self, batch_list, batch_idx):

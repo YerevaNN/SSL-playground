@@ -557,9 +557,9 @@ class RoIHeads(torch.nn.Module):
 
         box_features = self.box_roi_pool(features, proposals, image_shapes)
 
-        box_features = self.box_head(box_features)
         if only_features:
             return box_features
+        box_features = self.box_head(box_features)
         class_logits, box_regression = self.box_predictor(box_features)
 
         result, losses = [], {}
