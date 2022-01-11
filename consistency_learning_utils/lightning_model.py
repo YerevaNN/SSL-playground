@@ -673,8 +673,8 @@ class STAC(pl.LightningModule):
         rows = []
         for i in range(len(predictions)):
             for j, p in enumerate(predictions[i][1]):
-                bbox = predictions[i][0][j]
-                feat = p
+                bbox = [float(k) for k in predictions[i][0][j]]
+                feat = p.cpu().detach().numpy().tolist()
                 row = [self.global_step, unlabeled_image_paths[i], float(p[0][0][0]), float(p[1][0][0]), bbox, feat]
                 rows.append(row)
 
