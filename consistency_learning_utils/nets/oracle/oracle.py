@@ -20,7 +20,6 @@ def oracle_all(pred, truth):
 
     for t in truth:
         truth_bbox = [t[0], t[1], t[2], t[3]]
-        min_score = 1
         for p in range(0, len(pred)):
             pred_label = pred[p][4]
             if pred_label == t[4]:
@@ -77,53 +76,55 @@ def get_target(label_path):
     return target
 
 
-def get_class_masks(teacher_preds, split_idx):
-    train_set = dict(list(teacher_preds.items())[:split_idx])
-    test_set = dict(list(teacher_preds.items())[split_idx:])
+# def get_class_masks(teacher_preds, split_idx):
+#     train_set = dict(list(teacher_preds.items())[:split_idx])
+#     test_set = dict(list(teacher_preds.items())[split_idx:])
 
-    training_images = list(train_set.keys())
-    testing_images = list(test_set.keys())
-    training_cl_masks = []
-    test_cl_masks = []
+#     training_images = list(train_set.keys())
+#     testing_images = list(test_set.keys())
+#     training_cl_masks = []
+#     test_cl_masks = []
 
-    for training_img in training_images:
-        training_cl_mask = {
-            j: np.array([x[4] == j for x in train_set[training_img]]) for j in [1, 2, 3]
-        }
-        training_cl_masks.append(training_cl_mask)
+#     for training_img in training_images:
+#         training_cl_mask = {
+#             j: np.array([x[4] == j for x in train_set[training_img]]) for j in [1, 2, 3]
+#         }
+#         training_cl_masks.append(training_cl_mask)
 
-    for testing_img in testing_images:
-        test_cl_mask = {
-            j: np.array([x[4] == j for x in test_set[testing_img]]) for j in [1, 2, 3]
-        }
-        test_cl_masks.append(test_cl_mask)
+#     for testing_img in testing_images:
+#         test_cl_mask = {
+#             j: np.array([x[4] == j for x in test_set[testing_img]]) for j in [1, 2, 3]
+#         }
+#         test_cl_masks.append(test_cl_mask)
 
-    return training_cl_masks, test_cl_masks
+#     return training_cl_masks, test_cl_masks
 
 def get_dataset(csv_path, label_root, split_idx):
     truth, predictions = process_data(csv_path, label_root)
-    train_cl_masks, test_cl_masks = get_class_masks(predictions, split_idx)
+    # train_cl_masks, test_cl_masks = get_class_masks(predictions, split_idx)
 
     image_paths = list(predictions.keys())
-    selected_pseudo_labels = []
+    labels = []
     samples = []
+    classes = []
 
     for image in tqdm(image_paths):
         preds = predictions[image]
         gt = truth[image]
 
-        for pred in preds:
-            samples.append(preds)
+        for i, pred in enumerate(preds):
+            samples.append(pred)
+            classes.append(gt[i][4]) # check
 
-        selected_pseudo_label= oracle_all(preds, gt)
+        selected_pseudo_label = oracle_all(preds, gt)
         for spl in selected_pseudo_label:
-            selected_pseudo_labels.append(spl)
+            labels.append(spl)
 
-    return samples, selected_pseudo_labels, train_cl_masks, test_cl_masks
+    return samples, labels, classes #, train_cl_masks, test_cl_masks
 
 def process_data(csv_path, label_root):
     df = pd.read_csv(csv_path)
-
+    print("yeeeeeeeet")
     image_names = df['img_path'].to_list()
     bboxes = df['bbox'].to_list()
     classes = df['class'].to_list()
@@ -132,22 +133,19 @@ def process_data(csv_path, label_root):
 
     processed_bboxes = []
     for box in tqdm(bboxes):
-        bbox = box.replace('tensor([', '').replace('])', '').split(',')
+        bbox = box.replace('[', '').replace(']', '').split(',')
         new_bbox = []
         for b in range(len(bbox)):
             new_bbox.append(float(bbox[b]))
         processed_bboxes.append(new_bbox)
 
     processed_features = []
-    for f in tqdm(features):
-        feature = f.replace('tensor([[', '').replace('grad_fn=<UnbindBackward>)', '').replace(']],', '').replace(']]', '').split('\n')
+    processed_features = []
+    for f in features:
+        feature = f.replace('[', '').replace(']', '').split(',')
         new_feature = []
         for ft in range(len(feature)):
-            processed_ft = feature[ft].replace('[', '').replace('],', '').split(',')
-            nft = []
-            for x in processed_ft:
-                nft.append(float(x))
-            new_feature.append(nft)
+            new_feature.append(float(feature[ft]))
         processed_features.append(new_feature)
 
     predictions = {image: [] for image in image_names}

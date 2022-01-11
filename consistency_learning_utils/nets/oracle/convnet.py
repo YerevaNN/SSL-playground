@@ -40,16 +40,17 @@ class Net(nn.Module):
 
 
 class MyDataset(Dataset):
-    def __init__(self, samples, labels):
+    def __init__(self, samples, labels, classes):
         super().__init__()
         self.samples = samples
         self.labels = labels
+        self.classes = classes
 
     def __len__(self):
         return len(self.samples)
 
     def __get_target__(self, sample_index):
-        return self.labels[sample_index]
+        return self.labels[sample_index], self.classes[sample_index]
 
     def __getitem__(self, index):
         sample = self.samples[index]
@@ -58,7 +59,7 @@ class MyDataset(Dataset):
         return sample, target
 
 
-def get_train_test_loaders(samples, labels, split_idx):
+def get_train_test_loaders(samples, labels, classes, split_idx):
     samples = torch.transpose(torch.FloatTensor(samples), 1, 2)
     samples = torch.unsqueeze(samples, dim=1)
 
@@ -68,9 +69,11 @@ def get_train_test_loaders(samples, labels, split_idx):
 
     train_samples, test_samples = samples[:split_idx], samples[split_idx:]
     train_labels, test_labels = labels[:split_idx], labels[split_idx:]
+    train_classes, test_classes = classes[:split_idx], classes[split_idx:]
+
     
-    train_dataset = MyDataset(train_samples, train_labels)
-    test_dataset = MyDataset(test_samples, test_labels)
+    train_dataset = MyDataset(train_samples, train_labels, train_classes)
+    test_dataset = MyDataset(test_samples, test_labels, test_classes)
 
     train_dataloader = DataLoader(train_dataset, batch_size=16)
     test_dataloader = DataLoader(test_dataset, batch_size=16)
@@ -119,11 +122,8 @@ class Oracle(pl.LightningModule):
             "fn": 0
         } for i in [1, 2, 3]}
 
-    def set_datasets(self, samples, labels, train_cl_masks, test_cl_masks, split_idx):
-        self.train_cl_masks = train_cl_masks
-        self.test_cl_masks = test_cl_masks
-
-        self.train_loader, self.test_loader = get_train_test_loaders(samples, labels, split_idx)
+    def set_datasets(self, samples, labels, classes, split_idx):
+        self.train_loader, self.test_loader = get_train_test_loaders(samples, labels, classes, split_idx)
 
     def load_from_path(self, path):
         sd = torch.load(path)
@@ -156,11 +156,16 @@ class Oracle(pl.LightningModule):
         return binary_cross_entropy(y_pred, y_truth)
 
     def training_step(self, batch, batch_inx):
-        inputs, labels = batch
+        inputs, labels_and_classes = batch
+        labels, classes = [], []
+        for x in labels_and_classes:
+            l, c = x
+            labels.append(l)
+            classes.append(c)
         outputs = self.forward(inputs)
         loss = self.bce_loss(outputs, labels.float())
         self.global_info_init()
-        if self.current_epoch == 999:
+        if self.current_epoch % 10 == 0:
             for i in range(len(outputs)):
                 self.compute_accuracy(outputs[i][0][0].cpu().detach().numpy()>0.5, labels[i][0][0].cpu().detach().numpy()>0.5,
                                       self.train_cl_masks[i])

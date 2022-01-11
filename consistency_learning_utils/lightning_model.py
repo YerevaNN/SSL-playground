@@ -630,16 +630,16 @@ class STAC(pl.LightningModule):
         target = make_target_from_y(y)
         y_hat = self.student(x, target, image_paths)
 
-        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
-            f.write("Supervised GR={} images=({})\n".format(
-                self.global_rank, ' '.join([os.path.basename(i[2]) for i in sup_batch])))
+        # with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+        #     f.write("Supervised GR={} images=({})\n".format(
+        #         self.global_rank, ' '.join([os.path.basename(i[2]) for i in sup_batch])))
 
         return y_hat
 
     def student_unsupervised_step(self, unsup_batch):
-        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
-            f.write("Unsupervised GR={} images=({})\n".format(
-            self.global_rank, ' '.join([os.path.basename(i[0][2]) for i in unsup_batch])))
+        # with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+        #     f.write("Unsupervised GR={} images=({})\n".format(
+        #     self.global_rank, ' '.join([os.path.basename(i[0][2]) for i in unsup_batch])))
 
         unlabeled_x, unlabeled_y, unlabeled_image_paths = [], [], []
         augmented_x, augmented_image_paths = [], []
@@ -762,8 +762,8 @@ class STAC(pl.LightningModule):
 
         sup_loss = self.frcnn_loss(sup_y_hat)
         loss = sup_loss + self.lam * unsup_loss
-        with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
-            f.write("GR={} loss={:.6f}\n".format(self.global_rank, loss))
+        # with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
+        #     f.write("GR={} loss={:.6f}\n".format(self.global_rank, loss))
 
         # if self.global_step % 20 < 10 or unsup_loss.sum().item() == 0.0:
         #     loss = sup_loss
