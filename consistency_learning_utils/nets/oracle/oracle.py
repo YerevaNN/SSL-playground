@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
+from tqdm.notebook import tqdm
 
 def bb_intersection_over_union(boxA, boxB):
     xA = max(boxA[0], boxB[0])
@@ -15,40 +16,24 @@ def bb_intersection_over_union(boxA, boxB):
 
 def oracle_all(pred, truth):
     selected_pseudo_labels = [0] * len(pred)
-    #     selected_pseudo_labels = np.zeros(len(pred), dtype=int)
     IOU_threshold = 0.5
-
-    class_scores = {}
 
     for t in truth:
         truth_bbox = [t[0], t[1], t[2], t[3]]
-        #         bestIOU = 0
         min_score = 1
-        best_p = None
         for p in range(0, len(pred)):
             pred_label = pred[p][4]
             if pred_label == t[4]:
                 pred_bbox = [pred[p][0], pred[p][1], pred[p][2], pred[p][3]]
-                pred_score = pred[p][5]
                 IOU = bb_intersection_over_union(truth_bbox, pred_bbox)
                 if IOU >= IOU_threshold:
                     selected_pseudo_labels[p] = IOU
-                    if pred[p][5] < min_score:
-                        min_score = pred[p][5]
-        #                     if IOU >= bestIOU:
-        #                         best_p = p
-        #                         bestIOU = IOU
-        #         if best_p:
-        #             selected_pseudo_labels[best_p] = 1
-        class_scores[t[4]] = min_score
 
-    return selected_pseudo_labels, class_scores
-
+    return selected_pseudo_labels
 
 def oracle_top(pred, truth):
     selected_pseudo_labels = [0] * len(pred)
     IOU_threshold = 0.5
-    class_scores = {}
 
     for t in truth:
         truth_bbox = [t[0], t[1], t[2], t[3]]
@@ -58,7 +43,6 @@ def oracle_top(pred, truth):
             pred_label = pred[p][4]
             if pred_label == t[4]:
                 pred_bbox = [pred[p][0], pred[p][1], pred[p][2], pred[p][3]]
-                pred_score = pred[p][5]
                 IOU = bb_intersection_over_union(truth_bbox, pred_bbox)
                 if IOU >= IOU_threshold:
                     if IOU >= bestIOU:
@@ -67,10 +51,8 @@ def oracle_top(pred, truth):
 
         if best_p:
             selected_pseudo_labels[best_p] = 1
-            class_scores[t[4]] = pred[best_p][5]
 
-    return selected_pseudo_labels, class_scores
-
+    return selected_pseudo_labels
 
 def get_target(label_path):
     target = []
@@ -126,23 +108,16 @@ def get_dataset(csv_path, label_root, split_idx):
     selected_pseudo_labels = []
     samples = []
 
-    max_pred_len = 100
-    for image in image_paths:
-
+    for image in tqdm(image_paths):
         preds = predictions[image]
         gt = truth[image]
 
-        # if (len(preds) >= max_pred_len):
-        #     max_pred_len = len(preds)
-        samples.append(preds)
+        for pred in preds:
+            samples.append(preds)
 
-        selected_pseudo_label, _ = oracle_all(preds, gt)
-        selected_pseudo_labels.append(selected_pseudo_label)
-    empty_box = [0]*len(samples[0][0])
-    for s in range(len(samples)):
-        for k in range(len(samples[s]), max_pred_len):
-            samples[s].append(empty_box)
-            selected_pseudo_labels[s].append(0)
+        selected_pseudo_label= oracle_all(preds, gt)
+        for spl in selected_pseudo_label:
+            selected_pseudo_labels.append(spl)
 
     return samples, selected_pseudo_labels, train_cl_masks, test_cl_masks
 
@@ -156,24 +131,28 @@ def process_data(csv_path, label_root):
     features = df['features'].to_list()
 
     processed_bboxes = []
-    for box in bboxes:
-        bbox = box.replace('[', '').replace(']', '').split(',')
+    for box in tqdm(bboxes):
+        bbox = box.replace('tensor([', '').replace('])', '').split(',')
         new_bbox = []
         for b in range(len(bbox)):
             new_bbox.append(float(bbox[b]))
         processed_bboxes.append(new_bbox)
 
     processed_features = []
-    for f in features:
-        feature = f.replace('[', '').replace(']', '').split(',')
+    for f in tqdm(features):
+        feature = f.replace('tensor([[', '').replace('grad_fn=<UnbindBackward>)', '').replace(']],', '').replace(']]', '').split('\n')
         new_feature = []
         for ft in range(len(feature)):
-            new_feature.append(float(feature[ft]))
+            processed_ft = feature[ft].replace('[', '').replace('],', '').split(',')
+            nft = []
+            for x in processed_ft:
+                nft.append(float(x))
+            new_feature.append(nft)
         processed_features.append(new_feature)
 
     predictions = {image: [] for image in image_names}
 
-    for i in range(len(image_names)):
+    for i in tqdm(range(len(image_names))):
         pred = [processed_bboxes[i][0], processed_bboxes[i][1], processed_bboxes[i][2], processed_bboxes[i][3],
                 int(classes[i]), confidences[i]]
         for k in range(len(processed_features[i])):
@@ -184,7 +163,7 @@ def process_data(csv_path, label_root):
 
     truth = {image: [] for image in images}
 
-    for j in range(len(images)):
+    for j in tqdm(range(len(images))):
         label_file = images[j].split('/')[-1]
         label_file = '.'.join(label_file.split('.')[:-1]) + '.txt'
         label_file = os.path.join(label_root, label_file)

@@ -236,12 +236,19 @@ def change_prediction_format(unlab_pred, phd_pred):
     for i, sample_pred in enumerate(unlab_pred):
         boxes = sample_pred['boxes'].cpu()
         labels = sample_pred['labels'].cpu().unsqueeze(1)
+        labels = labels.repeat(1, 7)
+        labels = labels.unsqueeze(2)
+        labels = labels.repeat(1, 1, 7)
+        labels = labels.unsqueeze(1)
         scores = sample_pred['scores'].cpu().unsqueeze(1)
+        scores = scores.repeat(1, 7)
+        scores = scores.unsqueeze(2)
+        scores = scores.repeat(1, 1, 7)
+        scores = scores.unsqueeze(1)
         features = phd_pred[i].cpu()
-        boxes = torch.cat((boxes, labels), dim = 1)
-        boxes = torch.cat((boxes, scores), dim = 1)
-        boxes = torch.cat((boxes, features), dim = 1)
-        new_pred.append(boxes)
+        features = torch.cat((labels, features), dim=1)
+        features = torch.cat((scores, features), dim=1)
+        new_pred.append((boxes, features))
     return new_pred
 
 

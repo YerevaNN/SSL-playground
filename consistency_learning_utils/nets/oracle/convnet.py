@@ -18,14 +18,14 @@ import os
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(1, 32, 3, padding=(2, 1), stride=1) # 1x1030x100 -> 32x1032x100
-        self.conv2 = nn.Conv2d(32, 32, 5, padding=(1, 2), stride=(3, 1)) # 32x1032x100 -> 32x344x100
-        self.conv3 = nn.Conv2d(32, 32, 3, padding=(2, 1), stride=(3, 1)) # 32x344x100 -> 32x116x100
-        self.conv4 = nn.Conv2d(32, 32, 3, padding=(2, 1), stride=(3, 1)) # 32x116x100 -> 32x40x100
-        self.conv5 = nn.Conv2d(32, 16, 3, padding=1, stride=1) # 32x40x100 -> 16x40x100
-        self.conv6 = nn.Conv2d(16, 8, 3, padding=1, stride=1) # 16x40x100 -> 8x40x100
-        self.conv7 = nn.Conv2d(8, 1, 3, padding=1, stride=1) # 8x40x100 -> 1x40x100
-        self.conv8 = nn.Conv2d(1, 1, (40, 1)) # 1x40x100 -> 1x1x100
+        self.conv1 = nn.Conv3d(258, 129, 3, padding=1, stride=1) # 258x7x7 -> 129x7x7
+        self.conv2 = nn.Conv2d(129, 64, 3, padding=1, stride=1) # 64x7x7
+        self.conv3 = nn.Conv2d(64, 32, 3, padding=1, stride=1) # 32x7x7
+        self.conv4 = nn.Conv2d(32, 16, 3, padding=1, stride=1) # 16x7x7
+        self.conv5 = nn.Conv2d(16, 8, 3, padding=1, stride=1) # 8x7x7
+        self.conv6 = nn.Conv2d(8, 4, 3, padding=1, stride=1) # 4x7x7
+        self.conv7 = nn.Conv2d(4, 1, 3, padding=1, stride=1) # 1x7x7
+        self.linear = nn.Linear(7 * 7, 1)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -34,9 +34,8 @@ class Net(nn.Module):
         x = F.relu(self.conv4(x))
         x = F.relu(self.conv5(x))
         x = F.relu(self.conv6(x))
-        x = F.relu(self.conv7(x))
-        x = self.conv8(x)
-        x = torch.sigmoid(x)
+        x = self.conv7(x)
+        x = self.linear(x)
         return x
 
 
@@ -274,14 +273,15 @@ class Oracle(pl.LightningModule):
 
 def preprocess_predictions(pred):
     boxes_per_image = [len(p) for p in pred]
-    for i, p in enumerate(pred):
-        if p.shape[0] < 100:
-            zer = torch.zeros((100-p.shape[0], p.shape[1]))
-            pred[i] = torch.cat((p, zer))
-        pred[i] = torch.transpose(pred[i], 0, 1)
+    # for boxes, p in enumerate(pred):
+    #     if p.shape[0] < 100:
+    #         zer = torch.zeros((100-p.shape[0], p.shape[1]))
+    #         pred[i] = torch.cat((p, zer))
+    #     pred[i] = torch.transpose(pred[i], 0, 1)
+    #     i += 1
     for i, p in enumerate(pred):
         pred[i] = p.to(device='cuda')
-    pred = torch.unsqueeze(torch.stack(pred), dim=1)
+    # pred = torch.unsqueeze(torch.stack(pred), dim=1)
     return boxes_per_image, pred
 
 def select_pls(output, boxes_per_image, pred, iou_thresh):
@@ -301,9 +301,11 @@ def select_pls(output, boxes_per_image, pred, iou_thresh):
 def inference(pred, model_path, iou_thresh=0.5, experiment_name=""):
     model = Oracle(experiment_name)
     model.cuda()
-    model.load_from_path(model_path)
-    old_pred = [torch.clone(p) for p in pred]
-    boxes_per_image, pred = preprocess_predictions(pred)
+    # model.load_from_path(model_path)
+    old_pred = [(torch.clone(p1), torch.clone(p2)) for p1, p2 in pred]
+    pred_boxes = [p[0] for p in pred]
+    pred_features = [p[1] for p in pred]
+    boxes_per_image, pred = preprocess_predictions(pred_features)
     output = model(pred)
     selected_predictions = select_pls(output, boxes_per_image, old_pred, iou_thresh)
     return selected_predictions
