@@ -331,14 +331,9 @@ class STAC(pl.LightningModule):
         print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
             self.hparams['initialization'], self.hparams['reuse_classifier']
         ))
-        self.predictions_csv_path = os.path.join(version_folder, 'predictions_on_unlabeled.csv')
-        os.makedirs(version_folder, exist_ok=True)
-        if self.hparams['clear_predictions_csv']:
-            headers = ['step', 'img_path', 'confidence', 'class', 'bbox', 'features']
-            pred_csv_file = open(self.predictions_csv_path, 'w')
-            pred_csv_writer = csv.writer(pred_csv_file)
-            pred_csv_writer.writerow(headers)
-            pred_csv_file.close()
+        self.feature_folder = os.path.join(version_folder, 'features')
+        os.makedirs(self.feature_folder, exist_ok=True)
+
         self.teacher_init = 'full' if (self.hparams['teacher_init_path'] and (not self.hparams['skip_burn_in'])) else \
             self.hparams['initialization']
 
@@ -670,17 +665,22 @@ class STAC(pl.LightningModule):
         target = []
         predictions = change_prediction_format(unlab_pred, phd_pred)
         
-        rows = []
         for i in range(len(predictions)):
+            rows = []
+            img_name = unlabeled_image_paths[i].split('/')[-1].split('.')[0]
             for j, p in enumerate(predictions[i][1]):
                 bbox = [float(k) for k in predictions[i][0][j]]
                 feat = p.cpu().detach().numpy().tolist()
                 row = [self.global_step, unlabeled_image_paths[i], float(p[0][0][0]), float(p[1][0][0]), bbox, feat]
                 rows.append(row)
+            cur_image_csv_path = os.path.join(self.feature_folder, img_name + '.csv')
+            headers = ['step', 'img_path', 'confidence', 'class', 'bbox', 'features']
+            pred_csv_file = open(cur_image_csv_path, 'w')
+            pred_csv_writer = csv.writer(pred_csv_file)
+            pred_csv_writer.writerow(headers)
+            pred_csv_writer.writerows(rows)
+            pred_csv_file.close()
 
-        with open(self.predictions_csv_path, 'a') as f:
-            writer = csv.writer(f)
-            writer.writerows(rows)
         
         return 0 * augmented_x[0].new(1).squeeze()
 
