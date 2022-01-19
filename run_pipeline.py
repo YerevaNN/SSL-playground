@@ -217,7 +217,7 @@ def main(_):
                   '--phase {} --stage {} --class_num {} --experiment_name {} {}'.format(
                 output_csv, task['session_token'], task['session']['Session_Status']['current_dataset']['name'], phase,
                 stage, len(class_id_to_name.keys()), 'pipeline_{}'.format(task['session_token']), init_from_base_arg)
-            if True and (FLAGS.read_outputs_from is None):
+            if False and (FLAGS.read_outputs_from is None):
                 if phase == 'base' and FLAGS.skip_base_upto is not None and stage <= FLAGS.skip_base_upto:
                     print("Skipping Stage {} of base phase due to --skip_base_upto".format(stage))
                 else:

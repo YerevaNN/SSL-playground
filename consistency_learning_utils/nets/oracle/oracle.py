@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 
 def bb_intersection_over_union(boxA, boxB):
     xA = max(boxA[0], boxB[0])
@@ -13,6 +13,7 @@ def bb_intersection_over_union(boxA, boxB):
     boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
     iou = interArea / float(boxAArea + boxBArea - interArea)
     return iou
+
 
 def oracle_all(pred, truth):
     selected_pseudo_labels = [0] * len(pred)
@@ -76,51 +77,44 @@ def get_target(label_path):
     return target
 
 
-# def get_class_masks(teacher_preds, split_idx):
-#     train_set = dict(list(teacher_preds.items())[:split_idx])
-#     test_set = dict(list(teacher_preds.items())[split_idx:])
-
-#     training_images = list(train_set.keys())
-#     testing_images = list(test_set.keys())
-#     training_cl_masks = []
-#     test_cl_masks = []
-
-#     for training_img in training_images:
-#         training_cl_mask = {
-#             j: np.array([x[4] == j for x in train_set[training_img]]) for j in [1, 2, 3]
-#         }
-#         training_cl_masks.append(training_cl_mask)
-
-#     for testing_img in testing_images:
-#         test_cl_mask = {
-#             j: np.array([x[4] == j for x in test_set[testing_img]]) for j in [1, 2, 3]
-#         }
-#         test_cl_masks.append(test_cl_mask)
-
-#     return training_cl_masks, test_cl_masks
-
-def get_dataset(csv_path, label_root, split_idx):
-    truth, predictions = process_data(csv_path, label_root)
-    # train_cl_masks, test_cl_masks = get_class_masks(predictions, split_idx)
-
-    image_paths = list(predictions.keys())
-    labels = []
+def get_dataset(csv_folder_path):
     samples = []
-    classes = []
+    # cntr = 0
+    files = os.listdir(csv_folder_path)
+    for filename in tqdm(files):
+        one_image_csv_path = os.path.join(csv_folder_path, filename)
+        num_lines = -1
+        for _ in open(one_image_csv_path):
+            num_lines += 1
+        for i in range(num_lines):
+            samples.append((filename, i))
+        # cntr += 1
+        # if cntr >= 10:
+        #     break
+    return samples
 
-    for image in tqdm(image_paths):
-        preds = predictions[image]
-        gt = truth[image]
 
-        for i, pred in enumerate(preds):
-            samples.append(pred)
-            classes.append(gt[i][4]) # check
+#     truth, predictions = process_data(csv_path, label_root)
+#     # train_cl_masks, test_cl_masks = get_class_masks(predictions, split_idx)
 
-        selected_pseudo_label = oracle_all(preds, gt)
-        for spl in selected_pseudo_label:
-            labels.append(spl)
+#     image_paths = list(predictions.keys())
+#     labels = []
+#     samples = []
+#     classes = []
 
-    return samples, labels, classes #, train_cl_masks, test_cl_masks
+#     for image in tqdm(image_paths):
+#         preds = predictions[image]
+#         gt = truth[image]
+
+#         for i, pred in enumerate(preds):
+#             samples.append(pred)
+#             classes.append(gt[i][4]) # check
+
+#         selected_pseudo_label = oracle_all(preds, gt)
+#         for spl in selected_pseudo_label:
+#             labels.append(spl)
+
+#     return samples, labels, classes #, train_cl_masks, test_cl_masks
 
 def process_data(csv_path, label_root):
     df = pd.read_csv(csv_path)
@@ -169,3 +163,16 @@ def process_data(csv_path, label_root):
         truth[images[j]] = target
 
     return truth, predictions
+
+
+def get_max_IOU(img_path, label_root, bbox, cl):
+    label_file = img_path.split('/')[-1]
+    label_file = '.'.join(label_file.split('.')[:-1]) + '.txt'
+    label_file = os.path.join(label_root, label_file)
+    target = get_target(label_file)
+    max_iou = 0
+    for truth in target:
+        truth_bbox = [truth[0], truth[1], truth[2], truth[3]]
+        if cl == truth[4]:
+            max_iou = max(max_iou, bb_intersection_over_union(bbox, truth_bbox))
+    return max_iou

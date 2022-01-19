@@ -3,22 +3,25 @@ from pytorch_lightning.utilities.apply_func import from_numpy
 
 import torch
 from torch import nn
+from torch.nn import MSELoss
 from torch.utils.data import Dataset, DataLoader
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.nn.functional import binary_cross_entropy
+from torch.nn.functional import cross_entropy
 
 import pytorch_lightning as pl
 from pytorch_lightning import Trainer
 from aim.pytorch_lightning import AimLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 import os
-
+import pandas as pd
+import ast
+from oracle import get_max_IOU
 
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv3d(258, 129, 3, padding=1, stride=1) # 258x7x7 -> 129x7x7
+        self.conv1 = nn.Conv2d(258, 129, 3, padding=1, stride=1) # 258x7x7 -> 129x7x7
         self.conv2 = nn.Conv2d(129, 64, 3, padding=1, stride=1) # 64x7x7
         self.conv3 = nn.Conv2d(64, 32, 3, padding=1, stride=1) # 32x7x7
         self.conv4 = nn.Conv2d(32, 16, 3, padding=1, stride=1) # 16x7x7
@@ -26,6 +29,7 @@ class Net(nn.Module):
         self.conv6 = nn.Conv2d(8, 4, 3, padding=1, stride=1) # 4x7x7
         self.conv7 = nn.Conv2d(4, 1, 3, padding=1, stride=1) # 1x7x7
         self.linear = nn.Linear(7 * 7, 1)
+        self.float()
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -35,77 +39,86 @@ class Net(nn.Module):
         x = F.relu(self.conv5(x))
         x = F.relu(self.conv6(x))
         x = self.conv7(x)
+        x = torch.flatten(x, 1, -1)
         x = self.linear(x)
+        x = torch.squeeze(x, 1)
+        x = torch.sigmoid(x)
         return x
 
 
 class MyDataset(Dataset):
-    def __init__(self, samples, labels, classes):
+    def __init__(self, samples, label_root, csv_folder_path):
         super().__init__()
         self.samples = samples
-        self.labels = labels
-        self.classes = classes
+        self.label_root = label_root
+        self.csv_folder_path = csv_folder_path
 
     def __len__(self):
         return len(self.samples)
 
-    def __get_target__(self, sample_index):
-        return self.labels[sample_index], self.classes[sample_index]
+    def __get_target__(self, img_path, bbox, cl):
+        max_iou = get_max_IOU(img_path, self.label_root, bbox, cl)
+        return max_iou, cl
 
     def __getitem__(self, index):
         sample = self.samples[index]
-        target = self.__get_target__(index)
+        csv_path, row_id = sample
+        csv_path = os.path.join(self.csv_folder_path, csv_path)
+        df = pd.read_csv(csv_path)
 
-        return sample, target
+        img_path = df['img_path'].to_list()[row_id]
+        cl = float(df['class'].to_list()[row_id])
+        bbox = df['bbox'].to_list()[row_id]
+        bbox = ast.literal_eval(bbox)
+        features = df['features'].to_list()[row_id]
+        features = ast.literal_eval(features)
+        features = torch.FloatTensor(features).cuda()
+        target = self.__get_target__(img_path, bbox, cl)
+
+        return features, target
 
 
-def get_train_test_loaders(samples, labels, classes, split_idx):
-    samples = torch.transpose(torch.FloatTensor(samples), 1, 2)
-    samples = torch.unsqueeze(samples, dim=1)
+def get_train_test_loaders(samples, label_root, split, batch_size, csv_folder_path):
 
-    labels = torch.tensor(labels)
-    labels = torch.unsqueeze(labels, dim=1)
-    labels = torch.unsqueeze(labels, dim=1)
+    split_idx = int(len(samples) * split)
 
     train_samples, test_samples = samples[:split_idx], samples[split_idx:]
-    train_labels, test_labels = labels[:split_idx], labels[split_idx:]
-    train_classes, test_classes = classes[:split_idx], classes[split_idx:]
-
     
-    train_dataset = MyDataset(train_samples, train_labels, train_classes)
-    test_dataset = MyDataset(test_samples, test_labels, test_classes)
+    train_dataset = MyDataset(train_samples, label_root, csv_folder_path)
+    test_dataset = MyDataset(test_samples, label_root, csv_folder_path)
 
-    train_dataloader = DataLoader(train_dataset, batch_size=16)
-    test_dataloader = DataLoader(test_dataset, batch_size=16)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size)
+    test_dataloader = DataLoader(test_dataset, batch_size=batch_size)
 
     return train_dataloader, test_dataloader
 
 
 class Oracle(pl.LightningModule):
-    def __init__(self, experiment_name):
+    def __init__(self, experiment_name, csv_folder_path = None):
         super().__init__()
+        self.csv_folder_path = csv_folder_path
 
         self.model = Net()
+        self.mse = MSELoss()
         self.aim_logger = AimLogger(
             experiment=experiment_name
         )
         self.save_dir_name = os.getcwd() + "/checkpoints/{}".format(experiment_name)
         os.makedirs(self.save_dir_name, exist_ok=True)
         self.best_validation_accuracy = -1
-        # checkpoint_callback = ModelCheckpoint(
-        #     dirpath=self.save_dir_name,
-        #     save_top_k=2,
-        #     filename='{epoch}-{val_acc:.3f}',
-        #     monitor='val_acc',
-        #     save_last=True,
-        #     mode='max'
-        # )
-        self.trainer = Trainer(gpus=-1, logger=self.aim_logger, max_epochs=1000)
-                            #    callbacks=[checkpoint_callback],
-                            #    checkpoint_callback = True)
+        self.global_info_init()
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=self.save_dir_name,
+            filename='{epoch}-{val_acc:.3f}',
+            save_last=True,
+            mode='max'
+        )
+        self.trainer = Trainer(gpus=-1, logger=self.aim_logger, max_epochs=1000,
+                               callbacks = [checkpoint_callback])
+
 
     def global_info_init(self):
-        self.global_info = {i: {
+        self.global_info_train = {i: {
             "tp": 0,
             "fp": 0,
             "fn": 0
@@ -122,17 +135,13 @@ class Oracle(pl.LightningModule):
             "fn": 0
         } for i in [1, 2, 3]}
 
-    def set_datasets(self, samples, labels, classes, split_idx):
-        self.train_loader, self.test_loader = get_train_test_loaders(samples, labels, classes, split_idx)
+    def set_datasets(self, samples, label_root, split, batch_size):
+        self.train_loader, self.test_loader = get_train_test_loaders(samples, label_root, split, batch_size,
+                                                                     self.csv_folder_path)
 
     def load_from_path(self, path):
         sd = torch.load(path)
         self.model.load_state_dict(sd)
-        # new_sd = {}
-        # for key in sd.keys():
-        #     new_key = key[6:]
-        #     new_sd[new_key] = sd[key]
-        # self.model.load_state_dict(new_sd)
 
     def forward(self, x):
         return self.model(x)
@@ -152,26 +161,27 @@ class Oracle(pl.LightningModule):
 
         return {'optimizer': optimizer}
 
-    def bce_loss(self, y_pred, y_truth):
-        return binary_cross_entropy(y_pred, y_truth)
+    def loss_function(self, y_pred, y_truth):
+        return torch.sqrt(self.mse(y_pred.float(), y_truth.float()))
 
     def training_step(self, batch, batch_inx):
         inputs, labels_and_classes = batch
-        labels, classes = [], []
-        for x in labels_and_classes:
-            l, c = x
-            labels.append(l)
-            classes.append(c)
+        labels, classes = labels_and_classes[0], labels_and_classes[1]
         outputs = self.forward(inputs)
-        loss = self.bce_loss(outputs, labels.float())
-        self.global_info_init()
-        if self.current_epoch % 10 == 0:
-            for i in range(len(outputs)):
-                self.compute_accuracy(outputs[i][0][0].cpu().detach().numpy()>0.5, labels[i][0][0].cpu().detach().numpy()>0.5,
-                                      self.train_cl_masks[i])
+        loss = self.loss_function(outputs, labels)
+        for i in range(len(outputs)):
+            label = labels[i]
+            output = outputs[i]
+            cl = int(classes[i])
+            if label >= 0.5 and output >= 0.5:
+                self.global_info_train[cl]['tp'] += 1
+            elif label < 0.5 and output >= 0.5:
+                self.global_info_train[cl]['fp'] += 1
+            elif label >= 0.5 and output < 0.5:
+                self.global_info_train[cl]['fn'] += 1
 
         self.logger.experiment.track(loss.item(), name='training_loss')
-        return {'loss': loss}
+        return {'loss': loss, 'fscore_train': self.f1_scores(self.global_info_train)}
 
     def training_epoch_end(self, outputs: List[Any]) -> None:
         if self.current_epoch == 999:
@@ -186,54 +196,37 @@ class Oracle(pl.LightningModule):
             self.compute_accuracy(outputs[i][0][0].cpu().detach().numpy() > 0.5, labels[i][0][0].cpu().detach().numpy() > 0.5,
                                   self.test_cl_masks[i], phase='test')
 
-        loss = self.bce_loss(outputs, labels.float())
+        loss = self.loss_function(outputs, labels.float())
 
         self.logger.experiment.track(loss.item(), name='test_loss')
 
         return {'loss': loss}
 
     def validation_step(self, batch, batch_idx):
-        inputs, labels = batch
+        inputs, labels_and_classes = batch
+        labels, classes = labels_and_classes[0], labels_and_classes[1]
         outputs = self.forward(inputs)
-        loss = self.bce_loss(outputs, labels.float())
-        self.global_info_init()
-
+        loss = self.loss_function(outputs, labels)
         for i in range(len(outputs)):
-            self.compute_accuracy(outputs[i][0][0].cpu().detach().numpy() > 0.5, labels[i][0][0].cpu().detach().numpy() > 0.5,
-                                  self.test_cl_masks[i], phase='val')
-        classes = list(self.global_info_val.keys())
-        fscore_per_class = []
-        for c in classes:
-            nvf = self.global_info_val[c]
-            tp, fp, fn = nvf['tp'], nvf['fp'], nvf['fn']
-            if tp + fp + fn == 0:
-                fscore = 0
-            else:
-                fscore = self.f1_score(tp, fp, fn)
-            fscore_per_class.append(fscore)
-        accuracy = torch.tensor(0)
-        if len(fscore_per_class):
-            accuracy = sum(fscore_per_class)/len(fscore_per_class)
+            label = labels[i]
+            output = outputs[i]
+            cl = int(classes[i])
+            if label >= 0.5 and output >= 0.5:
+                self.global_info_val[cl]['tp'] += 1
+            elif label < 0.5 and output >= 0.5:
+                self.global_info_val[cl]['fp'] += 1
+            elif label >= 0.5 and output < 0.5:
+                self.global_info_val[cl]['fn'] += 1
 
         self.logger.experiment.track(loss.item(), name='val_loss')
-        self.logger.experiment.track(accuracy, name='val_acc')
 
-        return {'val_loss': loss, 'fscores': fscore_per_class}
+        return {'val_loss': loss}
 
     def validation_epoch_end(self, results):
-        fscores = [0 for i in range(len(results[0]['fscores']))]
-        for result in results:
-            fs = result['fscores']
-            fscores = [fs[i] + fscores[i] for i in range(len(fs))]
-        fscores = [i/len(results) for i in fscores]
-        print('fscores', fscores, '\n')
-        accuracy = sum(fscores)/len(fscores)
-        print('accuracy', accuracy, '\n')
-        if accuracy > self.best_validation_accuracy:
-            print('achieved top validation accuracy, saving the checkpoint')
-            self.best_validation_accuracy = accuracy
-            torch.save(self.model.state_dict(), os.path.join(self.save_dir_name, 'best.ckpt'))
-        return {'val_acc': accuracy}
+        fscores = self.f1_scores(self.global_info_val)
+        self.global_info_init()
+        print(fscores)
+        return {'val_fscores': fscores}
 
     def fit_model(self):
         self.trainer.fit(self)
@@ -272,8 +265,18 @@ class Oracle(pl.LightningModule):
                 self.global_info_val[cl]['fn'] += sum(~y_hat[:len(cl_masks[cl])] & y[:len(cl_masks[cl])]
                                                   & cl_masks[cl])
 
-    def f1_score(self, tp, fp, fn):
-        return tp / (tp + (fp + fn) / 2)
+    def f1_scores(self, dicts):
+        fscores = []
+        for k in dicts.keys():
+            dct = dicts[k]
+            tp = dct['tp']
+            fp = dct['fp']
+            fn = dct['fn']
+            if tp + fp + fn == 0:
+                fscores.append(0)
+            else:
+                fscores.append(tp / (tp + (fp + fn) / 2))
+        return fscores
 
 
 def preprocess_predictions(pred):
