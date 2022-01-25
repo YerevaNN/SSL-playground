@@ -21,6 +21,7 @@ from aim.pytorch_lightning import AimLogger
 
 from .dataloader import get_train_test_loaders
 from .nets.oracle.convnet import inference
+import zarr
 
 def make_target_from_y(y):
     """
@@ -333,6 +334,7 @@ class STAC(pl.LightningModule):
         ))
         self.feature_folder = os.path.join(version_folder, 'features')
         os.makedirs(self.feature_folder, exist_ok=True)
+        self.zarr_file = zarr.open(os.path.join(self.feature_folder, 'features.zarr'), mode='w')
 
         self.teacher_init = 'full' if (self.hparams['teacher_init_path'] and (not self.hparams['skip_burn_in'])) else \
             self.hparams['initialization']
@@ -666,22 +668,16 @@ class STAC(pl.LightningModule):
         predictions = change_prediction_format(unlab_pred, phd_pred)
         
         for i in range(len(predictions)):
-            rows = []
             img_name = unlabeled_image_paths[i].split('/')[-1].split('.')[0]
             for j, p in enumerate(predictions[i][1]):
                 bbox = [float(k) for k in predictions[i][0][j]]
                 feat = p.cpu().detach().numpy().tolist()
-                row = [self.global_step, unlabeled_image_paths[i], float(p[0][0][0]), float(p[1][0][0]), bbox, feat]
-                rows.append(row)
-            cur_image_csv_path = os.path.join(self.feature_folder, img_name + '.csv')
-            headers = ['step', 'img_path', 'confidence', 'class', 'bbox', 'features']
-            pred_csv_file = open(cur_image_csv_path, 'w')
-            pred_csv_writer = csv.writer(pred_csv_file)
-            pred_csv_writer.writerow(headers)
-            pred_csv_writer.writerows(rows)
-            pred_csv_file.close()
+                bbox = np.array(bbox, dtype='float32')
+                feat = np.array(feat, dtype='float32')
+                cur_box_name = img_name + '_' + str(j)
+                self.zarr_file[cur_box_name + '_bbox'] = bbox
+                self.zarr_file[cur_box_name + '_features'] = feat
 
-        
         return 0 * augmented_x[0].new(1).squeeze()
 
         selected_pseudo_labels = filter_predictions(self.hparams['thresholding_method'], 
