@@ -326,13 +326,14 @@ class STAC(pl.LightningModule):
         self.onTeacher = True  # as opposed to "on student"
 
         version_folder = os.path.join(self.hparams['phase_folder'], self.hparams['version_name'])
+
         self.save_dir_name_teacher = os.path.join(version_folder, 'teacher')
         self.save_dir_name_student = os.path.join(version_folder, 'student')
         self.output_csv = os.path.join(version_folder, 'output.csv')
         print("Creating Teacher & Student with {} initialization and reuse_classifier={}".format(
             self.hparams['initialization'], self.hparams['reuse_classifier']
         ))
-        self.feature_folder = os.path.join(version_folder, 'features')
+        self.feature_folder = os.path.join('.', self.hparams['version_name'], 'features')
         os.makedirs(self.feature_folder, exist_ok=True)
         self.zarr_file = zarr.open(os.path.join(self.feature_folder, 'features.zarr'), mode='w')
 
