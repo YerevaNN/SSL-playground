@@ -175,21 +175,3 @@ if __name__ == "__main__":
             hparams['experiment_name'])
 
     hparams['clear_predictions_csv'] = False
-    best_model = STAC(argparse.Namespace(**hparams))
-    best_model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
-                            external_val_file_path, external_val_label_root, label_root)
-    # eps = 1e-10
-    best_model.set_test_with_student(args.test_with_student, True if args.stage==7 else False)
-    # if args.stage == 7: #best_student_loss - eps > best_teacher_loss or
-    #     best_model.set_test_with_student(False)
-    best_model.test_from_best_checkpoint()
-    if os.path.exists(args.output_csv):
-        new_name = args.output_csv + '.tmp'
-        print("{} already exists. Moving it to {}".format(args.output_csv, new_name))
-        if os.path.exists(new_name):
-            print("Removing old {}".format(new_name))
-            os.remove(new_name)
-        shutil.move(args.output_csv, new_name)
-    print("Copying {} to {}".format(best_model.output_csv, args.output_csv))
-    shutil.copy(best_model.output_csv, args.output_csv)
-

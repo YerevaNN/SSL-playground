@@ -1,6 +1,9 @@
+from hashlib import new
 import os
 import pandas as pd
 import numpy as np
+import zarr
+from tqdm import tqdm
 
 def bb_intersection_over_union(boxA, boxB):
     xA = max(boxA[0], boxB[0])
@@ -13,42 +16,26 @@ def bb_intersection_over_union(boxA, boxB):
     iou = interArea / float(boxAArea + boxBArea - interArea)
     return iou
 
+
 def oracle_all(pred, truth):
     selected_pseudo_labels = [0] * len(pred)
-    #     selected_pseudo_labels = np.zeros(len(pred), dtype=int)
     IOU_threshold = 0.5
-
-    class_scores = {}
 
     for t in truth:
         truth_bbox = [t[0], t[1], t[2], t[3]]
-        #         bestIOU = 0
-        min_score = 1
-        best_p = None
         for p in range(0, len(pred)):
             pred_label = pred[p][4]
             if pred_label == t[4]:
                 pred_bbox = [pred[p][0], pred[p][1], pred[p][2], pred[p][3]]
-                pred_score = pred[p][5]
                 IOU = bb_intersection_over_union(truth_bbox, pred_bbox)
                 if IOU >= IOU_threshold:
                     selected_pseudo_labels[p] = IOU
-                    if pred[p][5] < min_score:
-                        min_score = pred[p][5]
-        #                     if IOU >= bestIOU:
-        #                         best_p = p
-        #                         bestIOU = IOU
-        #         if best_p:
-        #             selected_pseudo_labels[best_p] = 1
-        class_scores[t[4]] = min_score
 
-    return selected_pseudo_labels, class_scores
-
+    return selected_pseudo_labels
 
 def oracle_top(pred, truth):
     selected_pseudo_labels = [0] * len(pred)
     IOU_threshold = 0.5
-    class_scores = {}
 
     for t in truth:
         truth_bbox = [t[0], t[1], t[2], t[3]]
@@ -58,7 +45,6 @@ def oracle_top(pred, truth):
             pred_label = pred[p][4]
             if pred_label == t[4]:
                 pred_bbox = [pred[p][0], pred[p][1], pred[p][2], pred[p][3]]
-                pred_score = pred[p][5]
                 IOU = bb_intersection_over_union(truth_bbox, pred_bbox)
                 if IOU >= IOU_threshold:
                     if IOU >= bestIOU:
@@ -67,10 +53,8 @@ def oracle_top(pred, truth):
 
         if best_p:
             selected_pseudo_labels[best_p] = 1
-            class_scores[t[4]] = pred[best_p][5]
 
-    return selected_pseudo_labels, class_scores
-
+    return selected_pseudo_labels
 
 def get_target(label_path):
     target = []
@@ -95,100 +79,30 @@ def get_target(label_path):
     return target
 
 
-def get_class_masks(teacher_preds, split_idx):
-    train_set = dict(list(teacher_preds.items())[:split_idx])
-    test_set = dict(list(teacher_preds.items())[split_idx:])
+def get_dataset(zarr_path):
+    zarr_file = zarr.open(zarr_path, mode='r')
+    keys = zarr_file.keys()
+    samples = [[[], []], [[], []], [[], []]]
+    for key in tqdm(keys):
+        if key.split('_')[-1][0] == 'f':
+            newKey = key[:len(key) - 5]
+            features_key = newKey + '_feat'
+            features = zarr_file[features_key]
+            cl = int(features[1][0][0])
+            conf  = float(features[0][0][0])
+            # samples[cl - 1].append(newKey)
+            if conf > 0.5:
+                samples[cl - 1][1].append(newKey)
+            else:
+                samples[cl - 1][0].append(newKey)
+    return samples
 
-    training_images = list(train_set.keys())
-    testing_images = list(test_set.keys())
-    training_cl_masks = []
-    test_cl_masks = []
 
-    for training_img in training_images:
-        training_cl_mask = {
-            j: np.array([x[4] == j for x in train_set[training_img]]) for j in [1, 2, 3]
-        }
-        training_cl_masks.append(training_cl_mask)
-
-    for testing_img in testing_images:
-        test_cl_mask = {
-            j: np.array([x[4] == j for x in test_set[testing_img]]) for j in [1, 2, 3]
-        }
-        test_cl_masks.append(test_cl_mask)
-
-    return training_cl_masks, test_cl_masks
-
-def get_dataset(csv_path, label_root, split_idx):
-    truth, predictions = process_data(csv_path, label_root)
-    train_cl_masks, test_cl_masks = get_class_masks(predictions, split_idx)
-
-    image_paths = list(predictions.keys())
-    selected_pseudo_labels = []
-    samples = []
-
-    max_pred_len = 550
-    for image in image_paths:
-
-        preds = predictions[image]
-        gt = truth[image]
-
-        # if (len(preds) >= max_pred_len):
-        #     max_pred_len = len(preds)
-        samples.append(preds)
-
-        selected_pseudo_label, _ = oracle_all(preds, gt)
-        selected_pseudo_labels.append(selected_pseudo_label)
-    empty_box = [0]*len(samples[0][0])
-    for s in range(len(samples)):
-        for k in range(len(samples[s]), max_pred_len):
-            samples[s].append(empty_box)
-            selected_pseudo_labels[s].append(0)
-
-    return samples, selected_pseudo_labels, train_cl_masks, test_cl_masks
-
-def process_data(csv_path, label_root):
-    df = pd.read_csv(csv_path)
-
-    image_names = df['img_path'].to_list()
-    bboxes = df['bbox'].to_list()
-    classes = df['class'].to_list()
-    confidences = df['confidence'].to_list()
-    features = df['features'].to_list()
-
-    processed_bboxes = []
-    for box in bboxes:
-        bbox = box.replace('[', '').replace(']', '').split(',')
-        new_bbox = []
-        for b in range(len(bbox)):
-            new_bbox.append(float(bbox[b]))
-        processed_bboxes.append(new_bbox)
-
-    processed_features = []
-    for f in features:
-        feature = f.replace('[', '').replace(']', '').split(',')
-        new_feature = []
-        for ft in range(len(feature)):
-            new_feature.append(float(feature[ft]))
-        processed_features.append(new_feature)
-
-    predictions = {image: [] for image in image_names}
-
-    for i in range(len(image_names)):
-        pred = [processed_bboxes[i][0], processed_bboxes[i][1], processed_bboxes[i][2], processed_bboxes[i][3],
-                int(classes[i]), confidences[i]]
-        for k in range(len(processed_features[i])):
-            pred.append(processed_features[i][k])
-        predictions[image_names[i]].append(pred)
-
-    images = list(predictions.keys())
-
-    truth = {image: [] for image in images}
-
-    for j in range(len(images)):
-        label_file = images[j].split('/')[-1]
-        label_file = '.'.join(label_file.split('.')[:-1]) + '.txt'
-        label_file = os.path.join(label_root, label_file)
-        target = get_target(label_file)
-        truth[images[j]] = target
-
-    return truth, predictions
+def get_max_IOU(label_file, bbox, cl):
+    target = get_target(label_file)
+    max_iou = 0
+    for truth in target:
+        truth_bbox = [truth[0], truth[1], truth[2], truth[3]]
+        if cl == truth[4]:
+            max_iou = max(max_iou, bb_intersection_over_union(bbox, truth_bbox))
+    return max_iou

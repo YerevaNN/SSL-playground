@@ -20,7 +20,6 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from aim.pytorch_lightning import AimLogger
 
 from .dataloader import get_train_test_loaders
-from .nets.oracle.convnet import inference
 import zarr
 
 def make_target_from_y(y):
@@ -631,6 +630,40 @@ class STAC(pl.LightningModule):
 
         return y_hat
 
+    def get_boxes(self, img_path):
+        target = {}
+        boxes = []
+        labels = []
+        scores = []
+        label_folder = os.path.join(self.hparams['phase_folder'], 'labels')
+        image_id = img_path.split('/')[-1].split('.')[0]
+        label_path = os.path.join(label_folder, image_id + '.txt')
+        with open(label_path) as f:
+            for line in f:
+                line_arr = [float(t) for t in line.split(' ')]
+                label, xmin, ymin, xmax, ymax = line_arr
+                label = int(label)
+                xmin = int(xmin)
+                ymin = int(ymin)
+                xmax = int(xmax)
+                ymax = int(ymax)
+
+                if ymax <= ymin:
+                    ymax += 1
+                if xmax <= xmin:
+                    xmax += 1
+                boxes.append([xmin, ymin, xmax, ymax])
+                labels.append(label)
+                scores.append(1)
+        tensor_boxes = torch.cuda.FloatTensor(boxes, device="cuda")
+        tensor_labels = torch.cuda.FloatTensor(labels, device="cuda")
+        tensor_scores = torch.cuda.FloatTensor(scores, device="cuda")
+
+        target['boxes'] = tensor_boxes
+        target['labels'] = tensor_labels
+        target['scores'] = tensor_scores
+        return target
+
     def student_unsupervised_step(self, unsup_batch):
         with open('{}_gpu{}.log'.format(self.hparams['version_name'], self.global_rank), 'a') as f:
             f.write("Unsupervised GR={} images=({})\n".format(
@@ -639,12 +672,15 @@ class STAC(pl.LightningModule):
         unlabeled_x, unlabeled_y, unlabeled_image_paths = [], [], []
         augmented_x, augmented_image_paths = [], []
 
+        unlabeled_ground_truth_boxes = []
+
         for i in unsup_batch:
             unlab, augment = i
             unlabeled_x.append(unlab[0])
             if self.hparams['thresholding_method'].startswith('oracle'):
                 unlabeled_y.append(unlab[1])
             unlabeled_image_paths.append(unlab[2])
+            unlabeled_ground_truth_boxes.append(self.get_boxes(unlab[2]))
             augmented_x.append(augment[0])
             augmented_image_paths.append(augment[2])
 
@@ -654,9 +690,13 @@ class STAC(pl.LightningModule):
         for sample_pred in unlab_pred:
             cur_boxes = sample_pred['boxes']
             teacher_boxes.append(cur_boxes)
+        gt_boxes = []
+        for gt in unlabeled_ground_truth_boxes:
+            gtb = gt['boxes']
+            gt_boxes.append(gtb)
         self.phd.eval()
-        phd_pred = self.phd.forward(unlabeled_x, teacher_boxes=teacher_boxes)
-        phd_pred = torch.split(phd_pred, [x.shape[0] for x in teacher_boxes])
+        phd_pred = self.phd.forward(unlabeled_x, teacher_boxes=gt_boxes)
+        phd_pred = torch.split(phd_pred, [x.shape[0] for x in gt_boxes])
 
         # save_image(unlabeled_x[0], 'unlabeled.png')
         # save_image(augmented_x[0], 'augmented.png')
@@ -666,7 +706,7 @@ class STAC(pl.LightningModule):
 
         non_zero_boxes = []
         target = []
-        predictions = change_prediction_format(unlab_pred, phd_pred)
+        predictions = change_prediction_format(unlabeled_ground_truth_boxes, phd_pred)
         
         for i in range(len(predictions)):
             img_name = unlabeled_image_paths[i].split('/')[-1].split('.')[0]
@@ -677,7 +717,7 @@ class STAC(pl.LightningModule):
                 feat = np.array(feat, dtype='float32')
                 cur_box_name = img_name + '_' + str(j)
                 self.zarr_file[cur_box_name + '_bbox'] = bbox
-                self.zarr_file[cur_box_name + '_features'] = feat
+                self.zarr_file[cur_box_name + '_feat'] = feat
 
         return 0 * augmented_x[0].new(1).squeeze()
 
