@@ -215,18 +215,22 @@ def oracle2(pred, truth, IOU_threshold=0.7, conf_threshold=-1.0):
             tbox = t['bndbox']
             truth_bbox = [tbox['xmin'], tbox['ymin'], tbox['xmax'], tbox['ymax']]
             best_ps = []
-            for p in range(0, len(im_pred)):
-                pred_label = im_pred[p][4]
-                pred_conf = im_pred[p][5]
+            for p in range(len(im_pred[0])):
+                pred_label = im_pred[1][p][1][0][0].item()
+                pred_conf = im_pred[1][p][0][0][0].item()
                 if pred_label == t['label']:
-                    pred_bbox = [im_pred[p][0], im_pred[p][1], im_pred[p][2], im_pred[p][3]]
+                    pred_bbox = list(im_pred[0][p])
                     IOU = bb_intersection_over_union(truth_bbox, pred_bbox)
                     if IOU >= IOU_threshold and pred_conf >= conf_threshold:
                         best_ps.append(p)
 
             for best_p in best_ps:
                 indices.append(best_p)
-        selected_labels_of_image = im_pred[sorted(indices)]
+        selected_labels_of_image = []
+        for ind in indices:
+            bbox = im_pred[0][ind]
+            label = im_pred[1][ind][1][0][0]
+            selected_labels_of_image.append([bbox[0], bbox[1], bbox[2], bbox[3], label])
         selected_pseudo_labels.append(selected_labels_of_image)
     return selected_pseudo_labels
 
@@ -662,6 +666,10 @@ class STAC(pl.LightningModule):
         self.phd.eval()
         phd_pred = self.phd.forward(unlabeled_x, teacher_boxes=teacher_boxes)
         phd_pred = torch.split(phd_pred, [x.shape[0] for x in teacher_boxes])
+        kept_pred = [i for i in range(len(phd_pred)) if len(phd_pred[i].shape) == 4 and phd_pred[i].shape[0] > 0]
+        phd_pred = [phd_pred[i] for i in range(len(phd_pred)) if i in kept_pred]
+        unlab_pred = [unlab_pred[i] for i in range(len(unlab_pred)) if i in kept_pred]
+
 
         # save_image(unlabeled_x[0], 'unlabeled.png')
         # save_image(augmented_x[0], 'augmented.png')
@@ -690,13 +698,13 @@ class STAC(pl.LightningModule):
                 target_boxes.append([selected_pl[0], selected_pl[1], selected_pl[2], selected_pl[3]])
                 target_labels.append(selected_pl[4])
 
-            pseudo_boxes_all += predictions[i].shape[0]
+            pseudo_boxes_all += len(predictions[i])
 
-            if selected_labels_of_image.shape[0] > 0:
+            if len(selected_labels_of_image) > 0:
                 non_zero_boxes.append(i)
 
             # TODO move to the device of the model
-            pseudo_boxes_confident += selected_labels_of_image.shape[0]
+            pseudo_boxes_confident += len(selected_labels_of_image)
 
             tensor_boxes = torch.tensor(target_boxes).float().cuda()
             tensor_labels = torch.tensor(target_labels).long().cuda()
@@ -857,8 +865,14 @@ class STAC(pl.LightningModule):
             # self.student_mAP.add(np.array(student_pred_for_mAP), np.array(truth_for_mAP))
             # self.teacher_mAP.add(np.array(teacher_pred_for_mAP), np.array(truth_for_mAP))
             output_tensor[i][0][:min(200,len(truth_for_mAP))] = torch.tensor(np.array(truth_for_mAP)[:200])
-            output_tensor[i][1][:len(teacher_pred_for_mAP),:6] = torch.tensor(np.array(teacher_pred_for_mAP))
-            output_tensor[i][2][:len(student_pred_for_mAP),:6] = torch.tensor(np.array(student_pred_for_mAP))
+            student_pred_for_mAP_tensor = torch.tensor(np.array(student_pred_for_mAP))
+            teacher_pred_for_mAP_tensor = torch.tensor(np.array(teacher_pred_for_mAP))
+            if len(teacher_pred_for_mAP) == 0:
+                teacher_pred_for_mAP_tensor = torch.reshape(torch.tensor(np.array(teacher_pred_for_mAP)), (0, 6))
+            if len(student_pred_for_mAP) == 0:
+                student_pred_for_mAP_tensor = torch.reshape(torch.tensor(np.array(student_pred_for_mAP)), (0, 6))
+            output_tensor[i][1][:len(teacher_pred_for_mAP),:6] = teacher_pred_for_mAP_tensor
+            output_tensor[i][2][:len(student_pred_for_mAP),:6] = student_pred_for_mAP_tensor
 
             self.validation_teacher_boxes += len(teacher_pred_for_mAP)
             self.validation_student_boxes += len(student_pred_for_mAP)
@@ -1016,6 +1030,7 @@ class STAC(pl.LightningModule):
 
         else:
             raise NotImplementedError
+        # print(str(self.trainer.global_step), " <-lr-> ", str(curLR))
         self.logger.experiment.track(curLR, name='lr', context={'model':self.onTeacher, 'stage':self.stage})
 
         for pg in optimizer.param_groups:

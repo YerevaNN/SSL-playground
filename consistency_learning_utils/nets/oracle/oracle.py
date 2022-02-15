@@ -1,6 +1,8 @@
+from hashlib import new
 import os
 import pandas as pd
 import numpy as np
+import zarr
 from tqdm import tqdm
 
 def bb_intersection_over_union(boxA, boxB):
@@ -77,98 +79,26 @@ def get_target(label_path):
     return target
 
 
-def get_dataset(csv_folder_path):
-    samples = []
-    # cntr = 0
-    files = os.listdir(csv_folder_path)
-    for filename in tqdm(files):
-        one_image_csv_path = os.path.join(csv_folder_path, filename)
-        num_lines = -1
-        for _ in open(one_image_csv_path):
-            num_lines += 1
-        for i in range(num_lines):
-            samples.append((filename, i))
-        # cntr += 1
-        # if cntr >= 10:
-        #     break
+def get_dataset(zarr_path):
+    zarr_file = zarr.open(zarr_path, mode='r')
+    keys = zarr_file.keys()
+    samples = [[[], []], [[], []], [[], []]]
+    for key in tqdm(keys):
+        if key.split('_')[-1][0] == 'f':
+            newKey = key[:len(key) - 5]
+            features_key = newKey + '_feat'
+            features = zarr_file[features_key]
+            cl = int(features[1][0][0])
+            conf  = float(features[0][0][0])
+            # samples[cl - 1].append(newKey)
+            if conf > 0.5:
+                samples[cl - 1][1].append(newKey)
+            else:
+                samples[cl - 1][0].append(newKey)
     return samples
 
 
-#     truth, predictions = process_data(csv_path, label_root)
-#     # train_cl_masks, test_cl_masks = get_class_masks(predictions, split_idx)
-
-#     image_paths = list(predictions.keys())
-#     labels = []
-#     samples = []
-#     classes = []
-
-#     for image in tqdm(image_paths):
-#         preds = predictions[image]
-#         gt = truth[image]
-
-#         for i, pred in enumerate(preds):
-#             samples.append(pred)
-#             classes.append(gt[i][4]) # check
-
-#         selected_pseudo_label = oracle_all(preds, gt)
-#         for spl in selected_pseudo_label:
-#             labels.append(spl)
-
-#     return samples, labels, classes #, train_cl_masks, test_cl_masks
-
-def process_data(csv_path, label_root):
-    df = pd.read_csv(csv_path)
-    print("yeeeeeeeet")
-    image_names = df['img_path'].to_list()
-    bboxes = df['bbox'].to_list()
-    classes = df['class'].to_list()
-    confidences = df['confidence'].to_list()
-    features = df['features'].to_list()
-
-    processed_bboxes = []
-    for box in tqdm(bboxes):
-        bbox = box.replace('[', '').replace(']', '').split(',')
-        new_bbox = []
-        for b in range(len(bbox)):
-            new_bbox.append(float(bbox[b]))
-        processed_bboxes.append(new_bbox)
-
-    processed_features = []
-    processed_features = []
-    for f in features:
-        feature = f.replace('[', '').replace(']', '').split(',')
-        new_feature = []
-        for ft in range(len(feature)):
-            new_feature.append(float(feature[ft]))
-        processed_features.append(new_feature)
-
-    predictions = {image: [] for image in image_names}
-
-    for i in tqdm(range(len(image_names))):
-        pred = [processed_bboxes[i][0], processed_bboxes[i][1], processed_bboxes[i][2], processed_bboxes[i][3],
-                int(classes[i]), confidences[i]]
-        for k in range(len(processed_features[i])):
-            pred.append(processed_features[i][k])
-        predictions[image_names[i]].append(pred)
-
-    images = list(predictions.keys())
-
-    truth = {image: [] for image in images}
-
-    for j in tqdm(range(len(images))):
-        label_file = images[j].split('/')[-1]
-        label_file = '.'.join(label_file.split('.')[:-1]) + '.txt'
-        label_file = os.path.join(label_root, label_file)
-        target = get_target(label_file)
-        truth[images[j]] = target
-
-    return truth, predictions
-
-
-def get_max_IOU(img_path, label_root, bbox, cl):
-    label_file = img_path.split('/')[-1]
-    label_file = '.'.join(label_file.split('.')[:-1]) + '.txt'
-    label_file = os.path.join(label_root, label_file)
+def get_max_IOU(label_file, bbox, cl):
     target = get_target(label_file)
     max_iou = 0
     for truth in target:
