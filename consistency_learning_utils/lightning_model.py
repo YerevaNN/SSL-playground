@@ -655,14 +655,14 @@ class STAC(pl.LightningModule):
             return self.val_loader
 
     def validation_step(self, batch, batch_idx):
-        # if self.stage == 0 or self.validation_part == 0:
+          # if self.stage == 0 or self.validation_part == 0:
         #     return {}
         if self.no_val:
             return
         x, y, image_paths = batch
 
-        student_y_hat = self.student_forward(x, image_paths=image_paths)
-        teacher_y_hat = self.teacher_forward(x, image_paths=image_paths)
+        student_y_hat = self.student_forward(x, image_paths)
+        teacher_y_hat = self.teacher_forward(x, image_paths)
 
         batch_size = len(student_y_hat)
 
@@ -703,8 +703,14 @@ class STAC(pl.LightningModule):
             # self.student_mAP.add(np.array(student_pred_for_mAP), np.array(truth_for_mAP))
             # self.teacher_mAP.add(np.array(teacher_pred_for_mAP), np.array(truth_for_mAP))
             output_tensor[i][0][:min(200,len(truth_for_mAP))] = torch.tensor(np.array(truth_for_mAP)[:200])
-            output_tensor[i][1][:len(teacher_pred_for_mAP),:6] = torch.tensor(np.array(teacher_pred_for_mAP))
-            output_tensor[i][2][:len(student_pred_for_mAP),:6] = torch.tensor(np.array(student_pred_for_mAP))
+            student_pred_for_mAP_tensor = torch.tensor(np.array(student_pred_for_mAP))
+            teacher_pred_for_mAP_tensor = torch.tensor(np.array(teacher_pred_for_mAP))
+            if len(teacher_pred_for_mAP) == 0:
+                teacher_pred_for_mAP_tensor = torch.reshape(torch.tensor(np.array(teacher_pred_for_mAP)), (0, 6))
+            if len(student_pred_for_mAP) == 0:
+                student_pred_for_mAP_tensor = torch.reshape(torch.tensor(np.array(student_pred_for_mAP)), (0, 6))
+            output_tensor[i][1][:len(teacher_pred_for_mAP),:6] = teacher_pred_for_mAP_tensor
+            output_tensor[i][2][:len(student_pred_for_mAP),:6] = student_pred_for_mAP_tensor
 
             self.validation_teacher_boxes += len(teacher_pred_for_mAP)
             self.validation_student_boxes += len(student_pred_for_mAP)
