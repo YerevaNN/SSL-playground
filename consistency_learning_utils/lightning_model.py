@@ -21,6 +21,7 @@ from aim.pytorch_lightning import AimLogger
 
 from .dataloader import get_train_test_loaders
 import zarr
+from nets.oracle import inference
 
 def make_target_from_y(y):
     """
