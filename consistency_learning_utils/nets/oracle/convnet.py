@@ -18,7 +18,10 @@ import os
 import pandas as pd
 import ast
 from oracle import get_max_IOU
+from feature_extractor import FeatureExtractor
 import zarr
+from ... import model_changed_classifier
+
 
 class Net(nn.Module):
     def __init__(self):
@@ -48,15 +51,34 @@ class Net(nn.Module):
         return x
 
 
+def __getitem__(self, index: int):
+        img_path = self.file_lines[index].strip()  # new line!
+ 
+        with open(img_path, 'rb') as f:
+            image = Image.open(f)
+            image = image.convert("RGB")
+            width, height = image.size
+            image = np.array(image)  # otherwise nothing will work! but should we transpose this?
+        image_name = img_path.split('/')[-1]
+        if len(image.shape) == 2:
+            image = np.repeat(image[:, :, np.newaxis], 3, axis=2)
+        if self.target_required or self.thresholding is not None and self.thresholding.startswith('oracle'):
+            target = self.__get_target__(image_name, width, height)
+        else:
+            target = None
+        return image, target, img_path
+
+
 class MyDataset(Dataset):
-    def __init__(self, samples, label_root, zarr_path):
+    def __init__(self, image_paths, samples, label_root, zarr_path):
         super().__init__()
+        self.image_paths = image_paths 
         self.samples = samples
         self.label_root = label_root
         self.zarr_file = zarr.open(zarr_path, mode='r')
 
     def __len__(self):
-        return sum([len(x[0]) + len(x[1]) for x in self.samples])
+        return len(self.image_paths)
 
     def __get_target__(self, img_path, bbox, cl):
         max_iou = get_max_IOU(img_path, bbox, cl)
@@ -77,16 +99,20 @@ class MyDataset(Dataset):
         return features, target
 
 
-def get_train_test_loaders(samples, label_root, split, batch_size, zarr_path):
+def get_train_test_loaders(samples, label_root, split, batch_size, zarr_path, image_paths):
 
     split_idxs = [[int(len(sample[0]) * split), int(len(sample[1]) * split)] for sample in samples]
+
+    split_id = len(image_paths) * split
+    train_image_paths = image_paths[:split_id]
+    test_image_paths = image_paths[split_id:]
 
     train_samples = [[samples[i][0][:split_idxs[i][0]], samples[i][1][:split_idxs[i][1]]] for i in range(len(samples))]
     test_samples = [[samples[i][0][split_idxs[i][0]:], samples[i][1][split_idxs[i][1]:]] for i in range(len(samples))]
 
     
-    train_dataset = MyDataset(train_samples, label_root, zarr_path)
-    test_dataset = MyDataset(test_samples, label_root, zarr_path)
+    train_dataset = MyDataset(train_image_paths, train_samples, label_root, zarr_path)
+    test_dataset = MyDataset(test_image_paths, test_samples, label_root, zarr_path)
 
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size)
@@ -145,10 +171,10 @@ class Oracle(pl.LightningModule):
             "fn": 0
         } for i in [1, 2, 3]}
 
-    def set_datasets(self, samples, label_root, split, batch_size):
+    def set_datasets(self, samples, label_root, split, batch_size, image_paths):
         self.train_loader, self.test_loader = get_train_test_loaders(samples, label_root,
                                                                      split, batch_size,
-                                                                     self.zarr_path)
+                                                                     self.zarr_path, image_paths)
 
     def load_from_path(self, path):
         sd = torch.load(path)
