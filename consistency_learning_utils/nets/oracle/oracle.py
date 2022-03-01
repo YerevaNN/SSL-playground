@@ -88,13 +88,19 @@ def get_dataset(zarr_path):
             newKey = key[:len(key) - 5]
             features_key = newKey + '_feat'
             features = zarr_file[features_key]
+            bbox_key = newKey + '_bbox'
+            bbox = zarr_file[bbox_key]
+            bbox = np.array(bbox, dtype="float32")
+            bbox_h = bbox[3] - bbox[1]
+            bbox_w = bbox[2] - bbox[0]
             cl = int(features[1][0][0])
             conf  = float(features[0][0][0])
             # samples[cl - 1].append(newKey)
-            if conf > 0.5:
-                samples[cl - 1][1].append(newKey)
-            else:
-                samples[cl - 1][0].append(newKey)
+            if (bbox_h > 10 and bbox_w > 10):
+                if conf > 0.5:
+                    samples[cl - 1][1].append(newKey)
+                else:
+                    samples[cl - 1][0].append(newKey)
     return samples
 
 

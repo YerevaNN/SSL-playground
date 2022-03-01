@@ -255,6 +255,29 @@ def change_prediction_format(unlab_pred, phd_pred):
         new_pred.append((boxes, features))
     return new_pred
 
+def filter_small(unlab_pred):
+    filtered_teacher_boxes = []
+    for pred in unlab_pred:
+        bboxes = pred['boxes']
+        filtered_bboxes = []
+        labels = pred['labels']
+        filtered_labels = []
+        scores = pred['scores']
+        filtered_scores = []
+        for i in range(len(bboxes)):
+            if (bboxes[i][2] - bboxes[i][0]) > 10 and (bboxes[i][3] - bboxes[i][1]) > 10:
+                filtered_bboxes.append(bboxes[i].tolist())
+                filtered_labels.append(labels[i].item())
+                filtered_scores.append(scores[i].item())
+        if len(filtered_bboxes) == 0:
+            filtered_teacher_boxes.append({'boxes':torch.tensor(filtered_bboxes).reshape(0, 4).cuda(), 
+                                'labels': torch.tensor(filtered_labels, dtype=torch.int64).cuda(), 
+                                'scores': torch.tensor(filtered_scores).cuda()})
+        else:
+            filtered_teacher_boxes.append({'boxes':torch.tensor(filtered_bboxes).cuda(), 
+                                'labels': torch.tensor(filtered_labels).cuda(), 
+                                'scores': torch.tensor(filtered_scores).cuda()})
+    return filtered_teacher_boxes
 
 def filter_predictions(type, pred, class_num=None, truth=None, conf=None,
                        gamma=None, iou_thresh=None, model_path=None, experiment_name=None):
@@ -659,10 +682,13 @@ class STAC(pl.LightningModule):
 
         self.teacher.eval()
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+
+        unlab_pred = filter_small(unlab_pred)
         teacher_boxes = []
         for sample_pred in unlab_pred:
             cur_boxes = sample_pred['boxes']
             teacher_boxes.append(cur_boxes)
+
         self.phd.eval()
         phd_pred = self.phd.forward(unlabeled_x, teacher_boxes=teacher_boxes)
         phd_pred = torch.split(phd_pred, [x.shape[0] for x in teacher_boxes])
@@ -680,7 +706,7 @@ class STAC(pl.LightningModule):
         non_zero_boxes = []
         target = []
         predictions = change_prediction_format(unlab_pred, phd_pred)
-
+ 
         selected_pseudo_labels = filter_predictions(self.hparams['thresholding_method'], 
                                                     predictions, truth=unlabeled_y,
                                                     class_num=self.hparams['class_num'],

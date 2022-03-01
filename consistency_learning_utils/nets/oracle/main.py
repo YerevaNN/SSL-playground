@@ -10,7 +10,8 @@ if __name__ == "__main__":
     samples = get_dataset(zarr_path)
 
     lr = 0.0001
-    model = Oracle('zarr_extended_features_night_save_best', zarr_path = zarr_path, lr = lr)
+    # model = Oracle('zarr_extended_features_night_ignoring_small_boxes', zarr_path = zarr_path, lr = lr)
+    model = Oracle('debug', zarr_path = zarr_path, lr = lr)
     split = 0.9
     batch_size = 32
     model.set_datasets(samples, label_root, split, batch_size)
