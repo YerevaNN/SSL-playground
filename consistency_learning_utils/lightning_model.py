@@ -54,6 +54,31 @@ def break_batch(batch):
         paths.append(img[2])
     return x, y, paths
 
+def filter_small(unlab_pred):
+    filtered_teacher_boxes = []
+    for pred in unlab_pred:
+        bboxes = pred['boxes']
+        filtered_bboxes = []
+        labels = pred['labels']
+        filtered_labels = []
+        scores = pred['scores']
+        filtered_scores = []
+        for i in range(len(bboxes)):
+            if (bboxes[i][2] - bboxes[i][0]) > 10 and (bboxes[i][3] - bboxes[i][1]) > 10:
+                filtered_bboxes.append(bboxes[i].tolist())
+                filtered_labels.append(labels[i].item())
+                filtered_scores.append(scores[i].item())
+        if len(filtered_bboxes) == 0:
+            filtered_teacher_boxes.append({'boxes':torch.tensor(filtered_bboxes).reshape(0, 4).cuda(), 
+                                'labels': torch.tensor(filtered_labels, dtype=torch.int64).cuda(), 
+                                'scores': torch.tensor(filtered_scores).cuda()})
+        else:
+            filtered_teacher_boxes.append({'boxes':torch.tensor(filtered_bboxes).cuda(), 
+                                'labels': torch.tensor(filtered_labels).cuda(), 
+                                'scores': torch.tensor(filtered_scores).cuda()})
+    return filtered_teacher_boxes
+        
+
 class SkipConnection(nn.Module):
 
     def __init__(self, module):
@@ -498,27 +523,27 @@ class STAC(pl.LightningModule):
         non_zero_boxes = []
         target = []
 
-        thresholds = np.zeros(self.hparams['class_num'] + 1)
-        if self.thresholding_method == 'constant':
-            thresholds += self.confidence_threshold
-        elif self.thresholding_method == 'dynamic1':
-            # calculate stats for this batch
-            box_count = 0
-            for sample_pred in unlab_pred:
-                labels = sample_pred['labels'].cpu()
-                scores = sample_pred['scores'].cpu()
-                for l, s in zip(labels, scores):
-                    thresholds[l] += s
-                    box_count += 1
-            if box_count == 0:
-                thresholds += self.confidence_threshold
-            else:
-                p = np.power(thresholds, 0.1)
-                thresholds = p / p.max() * self.confidence_threshold
+        # thresholds = np.zeros(self.hparams['class_num'] + 1)
+        # if self.thresholding_method == 'constant':
+        #     thresholds += self.confidence_threshold
+        # elif self.thresholding_method == 'dynamic1':
+        #     # calculate stats for this batch
+        #     box_count = 0
+        #     for sample_pred in unlab_pred:
+        #         labels = sample_pred['labels'].cpu()
+        #         scores = sample_pred['scores'].cpu()
+        #         for l, s in zip(labels, scores):
+        #             thresholds[l] += s
+        #             box_count += 1
+        #     if box_count == 0:
+        #         thresholds += self.confidence_threshold
+        #     else:
+        #         p = np.power(thresholds, 0.1)
+        #         thresholds = p / p.max() * self.confidence_threshold
 
-            with open('{}_thresholds.txt'.format(self.hparams['version_name']), 'a') as f:
-                f.write(' '.join(["{:.2f}".format(t) for t in thresholds]) + '\n')
-
+        #     with open('{}_thresholds.txt'.format(self.hparams['version_name']), 'a') as f:
+        #         f.write(' '.join(["{:.2f}".format(t) for t in thresholds]) + '\n')
+        unlab_pred = filter_small(unlab_pred)
         for i, sample_pred in enumerate(unlab_pred):
             boxes = sample_pred['boxes'].cpu()
             labels = sample_pred['labels'].cpu()
@@ -528,8 +553,8 @@ class STAC(pl.LightningModule):
             target_boxes = []
             target_labels = []
             for j in range(len(labels)):
-                if scores[j] < thresholds[labels[j]]:
-                    index.append(j)
+                # if scores[j] < thresholds[labels[j]]:
+                index.append(j)
             pseudo_boxes_all += len(boxes)
 
             boxes = np.delete(boxes, index, axis=0)
