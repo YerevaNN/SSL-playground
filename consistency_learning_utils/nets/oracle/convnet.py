@@ -23,8 +23,8 @@ import zarr
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(258, 129, 3, padding=1, stride=1) # 258x7x7 -> 129x7x7
-        self.conv2 = nn.Conv2d(129, 64, 3, padding=1, stride=1) # 64x7x7
+        self.conv1 = nn.Conv2d(256, 128, 3, padding=1, stride=1) # 258x7x7 -> 129x7x7
+        self.conv2 = nn.Conv2d(128, 64, 3, padding=1, stride=1) # 64x7x7
         self.conv3 = nn.Conv2d(64, 32, 3, padding=1, stride=1) # 32x7x7
         self.conv4 = nn.Conv2d(32, 16, 3, padding=1, stride=1) # 16x7x7
         self.conv5 = nn.Conv2d(16, 8, 3, padding=1, stride=1) # 8x7x7

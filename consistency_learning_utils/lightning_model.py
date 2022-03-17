@@ -250,8 +250,8 @@ def change_prediction_format(unlab_pred, phd_pred):
         scores = scores.repeat(1, 1, 7)
         scores = scores.unsqueeze(1)
         features = phd_pred[i].cpu()
-        features = torch.cat((labels, features), dim=1)
-        features = torch.cat((scores, features), dim=1)
+        # features = torch.cat((labels, features), dim=1)
+        # features = torch.cat((scores, features), dim=1)
         new_pred.append((boxes, features))
     return new_pred
 
@@ -683,7 +683,7 @@ class STAC(pl.LightningModule):
         self.teacher.eval()
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
 
-        unlab_pred = filter_small(unlab_pred)
+        # unlab_pred = filter_small(unlab_pred)
         teacher_boxes = []
         for sample_pred in unlab_pred:
             cur_boxes = sample_pred['boxes']
