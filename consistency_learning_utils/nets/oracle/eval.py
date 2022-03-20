@@ -7,16 +7,18 @@ import zarr
 import os
 
 if __name__ == "__main__":
-    zarr_path = '/home/hkhachatrian/SSL-playground/widerperson_base_3_from_coco_0_zarr_extended_features_0/features/features.zarr'
-    label_root = '/home/hkhachatrian/SSL-playground/session_data/5L53Vy04iImX6naGoqdy/base/labels/'
+    zarr_path = '/home/hkhachatrian/SSL-playground/nightowls_adaption_3_from_coco_0_zarr_extended_features_nightowls/features/features.zarr'
+    label_root = '/home/hkhachatrian/SSL-playground/session_data/9rHyS6FE2WOAkSvsy9dX/adaption/labels/'
+
     model = Oracle('eval')
-    dict = torch.load('/home/hkhachatrian/SSL-playground/consistency_learning_utils/nets/oracle/checkpoints/zarr_balanced_train_fscore_2/last.ckpt')
-    model.load_state_dict(dict['state_dict'])
+    dict = torch.load('/home/hkhachatrian/SSL-playground/consistency_learning_utils/nets/oracle/checkpoints/coco_augmented/best.ckpt')
+    model.model.load_state_dict(dict)
     model.eval()
+    model.cpu()
     zarr_file = zarr.open(zarr_path, mode='r')
     keys = zarr_file.keys()
-    preds_file = os.getcwd() + "/preds_all.npy"
-    targets_file = os.getcwd() + "/targets_all.npy"
+    preds_file = os.getcwd() + "/preds_all_coco.npy"
+    targets_file = os.getcwd() + "/targets_all_coco.npy"
     predictions = {i: [] for i in [1, 2, 3]}
     targets = {i: [] for i in [1, 2, 3]}
     for key in tqdm(keys):
@@ -27,7 +29,7 @@ if __name__ == "__main__":
             features = zarr_file[features_key]
             features = torch.FloatTensor(features)
             cl = int(features[1][0][0])
-            samples = torch.unsqueeze(features, 0)
+            samples = torch.unsqueeze(features[2:], 0)
             prediction = model.forward(samples)
             pred = prediction.detach().numpy()
             predictions[cl].append(pred)
