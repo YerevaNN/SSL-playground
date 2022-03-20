@@ -5,11 +5,11 @@ import os
 from torch.utils.data import Dataset, DataLoader
 
 from torchvision.transforms import Compose, ToTensor, ToPILImage
-from .helpers.cutout import Cutout
+from helpers.cutout import Cutout
 from PIL import Image
 import random
 
-from .helpers import autoaugment
+from helpers import autoaugment
 # from .helpers.transforms import RandomErasing
 
 class ConcatDataset(Dataset):

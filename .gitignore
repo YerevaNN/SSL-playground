@@ -8,3 +8,4 @@ env.list
 session_data
 *.log
 bak.aim/*
+consistency_learning_utils/nets/oracle/feature_data/*

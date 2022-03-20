@@ -98,11 +98,11 @@ def get_dataset(zarr_path):
     return samples
 
 
-def get_max_IOU(label_file, bbox, cl):
+def get_max_IOU(label_file, bbox):
     target = get_target(label_file)
     max_iou = 0
     for truth in target:
         truth_bbox = [truth[0], truth[1], truth[2], truth[3]]
-        if cl == truth[4]:
-            max_iou = max(max_iou, bb_intersection_over_union(bbox, truth_bbox))
+        # if cl == truth[4]:
+        max_iou = max(max_iou, bb_intersection_over_union(bbox, truth_bbox))
     return max_iou

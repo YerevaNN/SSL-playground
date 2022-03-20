@@ -1,33 +1,36 @@
 from typing import List, Any
 from pytorch_lightning.utilities.apply_func import from_numpy
 
+from torchvision.transforms import ToTensor
 import torch
 from torch import nn
 from torch.nn import MSELoss
 from torch.utils.data import Dataset, DataLoader
+from pytorch_lightning.callbacks import ModelCheckpoint
 import torch.nn.functional as F
 import torch.optim as optim
+from PIL import Image
 import numpy as np
-from torch.nn.functional import cross_entropy
+import random
+import sys
+
+sys.path.insert(1, '/home/hkhachatrian/SSL-playground/consistency_learning_utils/')
+
+from lightning_model import model_changed_classifier
+from lightning_model import change_prediction_format
 
 import pytorch_lightning as pl
 from pytorch_lightning import Trainer
 from aim.pytorch_lightning import AimLogger
-from pytorch_lightning.callbacks import ModelCheckpoint
 import os
-import pandas as pd
-import ast
 from oracle import get_max_IOU
-from feature_extractor import FeatureExtractor
-import zarr
-from ... import model_changed_classifier
 
 
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(258, 129, 3, padding=1, stride=1) # 258x7x7 -> 129x7x7
-        self.conv2 = nn.Conv2d(129, 64, 3, padding=1, stride=1) # 64x7x7
+        self.conv1 = nn.Conv2d(256, 128, 3, padding=1, stride=1) # 258x7x7 -> 129x7x7
+        self.conv2 = nn.Conv2d(128, 64, 3, padding=1, stride=1) # 64x7x7
         self.conv3 = nn.Conv2d(64, 32, 3, padding=1, stride=1) # 32x7x7
         self.conv4 = nn.Conv2d(32, 16, 3, padding=1, stride=1) # 16x7x7
         self.conv5 = nn.Conv2d(16, 8, 3, padding=1, stride=1) # 8x7x7
@@ -51,68 +54,93 @@ class Net(nn.Module):
         return x
 
 
-def __getitem__(self, index: int):
-        img_path = self.file_lines[index].strip()  # new line!
- 
-        with open(img_path, 'rb') as f:
-            image = Image.open(f)
-            image = image.convert("RGB")
-            width, height = image.size
-            image = np.array(image)  # otherwise nothing will work! but should we transpose this?
-        image_name = img_path.split('/')[-1]
-        if len(image.shape) == 2:
-            image = np.repeat(image[:, :, np.newaxis], 3, axis=2)
-        if self.target_required or self.thresholding is not None and self.thresholding.startswith('oracle'):
-            target = self.__get_target__(image_name, width, height)
-        else:
-            target = None
-        return image, target, img_path
+class FeatureExtractor():
+    def __init__(self, class_num, box_score_thresh=0.005):
+        self.phd = model_changed_classifier(
+            initialize='full',
+            reuse_classifier='add',
+            class_num=class_num, # TODO
+            gamma=0,
+            box_score_thresh=box_score_thresh) # TODO
+        self.phd.cuda()
+        # self.teacher = model_changed_classifier(
+        #     initialize=False,
+        #     reuse_classifier='add',
+        #     class_num=class_num,
+        #     gamma=0,
+        #     box_score_thresh=box_score_thresh)
+        # if teacher_init_path is not None:
+        #     checkpoint = torch.load(teacher_init_path)
+        #     model_dict = self.teacher.state_dict()
+        #     loaded_dict = {k[8:]: v for k, v in checkpoint['state_dict'].items() if k.startswith('teacher')
+        #                 and (('cls_score' not in k and 'bbox_pred' not in k) if False else True)}
+        #     model_dict.update(loaded_dict)
+        #     self.teacher.load_state_dict(model_dict)
+
+    def get_features(self, image, boxes):
+        self.phd.eval()
+        predictions = self.phd.forward([image], teacher_boxes=boxes)
+        features = torch.squeeze(predictions[0], 0)
+        return features
 
 
 class MyDataset(Dataset):
-    def __init__(self, image_paths, samples, label_root, zarr_path):
+    def __init__(self, image_paths, label_root, class_num, box_score_thresh):
         super().__init__()
+        self.feature_extractor = FeatureExtractor(class_num, box_score_thresh)
         self.image_paths = image_paths 
-        self.samples = samples
         self.label_root = label_root
-        self.zarr_file = zarr.open(zarr_path, mode='r')
 
     def __len__(self):
         return len(self.image_paths)
 
-    def __get_target__(self, img_path, bbox, cl):
-        max_iou = get_max_IOU(img_path, bbox, cl)
-        return max_iou, cl
+    def __get_target__(self, img_path, label_root, bbox):
+        ind1 = img_path.rfind('/')
+        ind2 = img_path.rfind('.')
+        cur_image = img_path[ind1 + 1: ind2]
+        img_path = os.path.join(label_root, cur_image + '.txt')
+        max_iou = get_max_IOU(img_path, bbox)
+        return max_iou
 
-    def __getitem__(self, index):
-        sample = self.samples[index % 3][index % 2][(index // 6) % len(self.samples[index % 3][index % 2])]
-        img_path = os.path.join(self.label_root, sample.split('_')[0] + '.txt')
-        bbox_key = sample + '_bbox'
-        features_key = sample + '_feat'
-        bbox = self.zarr_file[bbox_key]
-        bbox = np.array(bbox, dtype="float32")
-        features = self.zarr_file[features_key]
-        features = torch.cuda.FloatTensor(features, device='cuda')
-        cl = float(features[1][0][0])
-        target = self.__get_target__(img_path, bbox, cl)
+    def __getitem__(self, index: int):
+        img_path, bbox, iou = self.image_paths[index].strip().split(' ')
+        bbox = [int(_) for _ in bbox[1:-1].split(',')]
+        bbox = torch.cuda.FloatTensor(bbox, device="cuda")
+        bbox = bbox.unsqueeze(dim = 0)
 
+        with open(img_path, 'rb') as f:
+            image = Image.open(f)
+            image = image.convert("RGB")
+            image = np.array(image)  # otherwise nothing will work! but should we transpose this?
+        if len(image.shape) == 2:
+            image = np.repeat(image[:, :, np.newaxis], 3, axis=2)
+        image = torch.cuda.FloatTensor(image, device="cuda")
+        if image.shape[0] != 3:
+            image = torch.reshape(image, (image.shape[2], image.shape[0], image.shape[1])) # HxWxC to CxHxW
+
+        features = self.feature_extractor.get_features(image, [bbox])
+
+        target = torch.tensor(float(iou), device='cuda')
         return features, target
 
 
-def get_train_test_loaders(samples, label_root, split, batch_size, zarr_path, image_paths):
+def get_train_test_loaders(feature_data_path, label_root, split, batch_size, class_num, box_score_thresh):
+    file_lines = []
+    # Format of the file must be like this:
+    # /home/...../...png [xmin,ymin,xmax,ymax]
+    with open(feature_data_path) as f:
+        file_lines = f.readlines()
+    random.shuffle(file_lines)
 
-    split_idxs = [[int(len(sample[0]) * split), int(len(sample[1]) * split)] for sample in samples]
 
-    split_id = len(image_paths) * split
-    train_image_paths = image_paths[:split_id]
-    test_image_paths = image_paths[split_id:]
+    split_id = int(len(file_lines) * split)
+    train_image_paths = file_lines[:split_id]
+    test_image_paths = file_lines[split_id:]
 
-    train_samples = [[samples[i][0][:split_idxs[i][0]], samples[i][1][:split_idxs[i][1]]] for i in range(len(samples))]
-    test_samples = [[samples[i][0][split_idxs[i][0]:], samples[i][1][split_idxs[i][1]:]] for i in range(len(samples))]
 
     
-    train_dataset = MyDataset(train_image_paths, train_samples, label_root, zarr_path)
-    test_dataset = MyDataset(test_image_paths, test_samples, label_root, zarr_path)
+    train_dataset = MyDataset(train_image_paths, label_root, class_num, box_score_thresh)
+    test_dataset = MyDataset(test_image_paths, label_root, class_num, box_score_thresh)
 
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size)
@@ -121,9 +149,8 @@ def get_train_test_loaders(samples, label_root, split, batch_size, zarr_path, im
 
 
 class Oracle(pl.LightningModule):
-    def __init__(self, experiment_name, zarr_path = None, lr = 1):
+    def __init__(self, experiment_name, lr = 1):
         super().__init__()
-        self.zarr_path = zarr_path
         self.lr = lr
 
         self.model = Net()
@@ -135,16 +162,18 @@ class Oracle(pl.LightningModule):
         os.makedirs(self.save_dir_name, exist_ok=True)
         self.best_validation_accuracy = -1
         self.global_info_init()
-        # checkpoint_callback = ModelCheckpoint(
-        #     dirpath=self.save_dir_name,
-        #     filename='{epoch}-{val_acc:.3f}',
-        #     save_last=True,
-        #     mode='max'
-        # )
-        self.trainer = Trainer(gpus=-1, logger=self.aim_logger, max_epochs=1000,
-                            #    callbacks = [checkpoint_callback],
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=self.save_dir_name,
+            filename='{epoch}-{val_acc:.3f}',
+            save_last=True,
+            mode='max'
+        )
+        self.trainer = Trainer(gpus=-1, max_epochs=1000,
+                               logger=self.aim_logger,
+                               callbacks = [checkpoint_callback],
+                               gradient_clip_val=0.5,
                             #    check_val_every_n_epoch=1)
-                               val_check_interval = 0.2)
+                               val_check_interval = 0.05)
         # self.targets_file = os.getcwd() + "/ious_nightowls.npy"
         # self.ious = {i: [] for i in [1, 2, 3]}
 
@@ -153,14 +182,14 @@ class Oracle(pl.LightningModule):
             "tp": 0,
             "fp": 0,
             "fn": 0
-        } for i in [1, 2, 3]}
+        } for i in range(1, 81)}
     
     def global_info_init_train(self):
         self.global_info_train = {i: {
             "tp": 0,
             "fp": 0,
             "fn": 0
-        } for i in [1, 2, 3]}
+        } for i in range(1, 81)}
 
     def global_info_init(self):
         self.global_info_init_val()
@@ -169,12 +198,14 @@ class Oracle(pl.LightningModule):
             "tp": 0,
             "fp": 0,
             "fn": 0
-        } for i in [1, 2, 3]}
+        } for i in range(1, 81)}
 
-    def set_datasets(self, samples, label_root, split, batch_size, image_paths):
-        self.train_loader, self.test_loader = get_train_test_loaders(samples, label_root,
-                                                                     split, batch_size,
-                                                                     self.zarr_path, image_paths)
+    def set_datasets(self, feature_data_path, label_root, split, batch_size,
+                     class_num, box_score_thresh):
+        self.train_loader, self.test_loader = get_train_test_loaders(feature_data_path,
+                                                                     label_root, split, batch_size,
+                                                                     class_num,
+                                                                     box_score_thresh)
 
     def load_from_path(self, path):
         sd = torch.load(path)
@@ -203,14 +234,15 @@ class Oracle(pl.LightningModule):
     
 
     def training_step(self, batch, batch_inx):
-        inputs, labels_and_classes = batch
-        labels, classes = labels_and_classes[0], labels_and_classes[1]
+        inputs, labels = batch
+        for i in range(len(inputs)):
+            inputs[i] = torch.squeeze(inputs[i], 0)
         outputs = self.forward(inputs)
         loss = self.loss_function(outputs, labels)
         for i in range(len(outputs)):
             label = labels[i]
             output = outputs[i]
-            cl = int(classes[i])
+            cl = 1
             # self.ious[cl].append(label.cpu().detach().numpy())
             if label >= 0.5 and output >= 0.5:
                 self.global_info_train[cl]['tp'] += 1
@@ -225,10 +257,10 @@ class Oracle(pl.LightningModule):
     def training_epoch_end(self, outputs: List[Any]) -> None:
         # np.save(self.targets_file, self.ious)
         fscores = self.f1_scores(self.global_info_train)
-        self.logger.experiment.track(fscores[0], name='train_fscore_class_0')
-        self.logger.experiment.track(fscores[1], name='train_fscore_class_1')
-        self.logger.experiment.track(fscores[2], name='train_fscore_class_2')
-        self.logger.experiment.track((fscores[0] + fscores[1] + fscores[2]) / 3, name='train_fscore_average')
+        # self.logger.experiment.track(fscores[0], name='train_fscore_class_0')
+        # self.logger.experiment.track(fscores[1], name='train_fscore_class_1')
+        # self.logger.experiment.track(fscores[2], name='train_fscore_class_2')
+        self.logger.experiment.track(sum([fscores[i] for i in range(80)]) / 80, name='train_fscore_average')
         self.global_info_init_train()
 
     def test_step(self, batch, batch_inx):
@@ -248,14 +280,15 @@ class Oracle(pl.LightningModule):
         return {'loss': loss}
 
     def validation_step(self, batch, batch_idx):
-        inputs, labels_and_classes = batch
-        labels, classes = labels_and_classes[0], labels_and_classes[1]
+        inputs, labels = batch
+        for i in range(len(inputs)):
+            inputs[i] = torch.squeeze(inputs[i], 0)
         outputs = self.forward(inputs)
         loss = self.loss_function(outputs, labels)
         for i in range(len(outputs)):
             label = labels[i]
             output = outputs[i]
-            cl = int(classes[i])
+            cl = 1
             if label >= 0.5 and output >= 0.5:
                 self.global_info_val[cl]['tp'] += 1
             elif label < 0.5 and output >= 0.5:
@@ -270,16 +303,16 @@ class Oracle(pl.LightningModule):
     def validation_epoch_end(self, results):
         fscores = self.f1_scores(self.global_info_val)
         self.global_info_init_val()
-        self.logger.experiment.track(fscores[0], name='fscore_class_0')
-        self.logger.experiment.track(fscores[1], name='fscore_class_1')
-        self.logger.experiment.track(fscores[2], name='fscore_class_2')
-        accuracy = (fscores[0] + fscores[1] + fscores[2]) / 3
+        # self.logger.experiment.track(fscores[0], name='fscore_class_0')
+        # self.logger.experiment.track(fscores[1], name='fscore_class_1')
+        # self.logger.experiment.track(fscores[2], name='fscore_class_2')
+        accuracy = sum([fscores[i] for i in range(80)]) / 80
         if accuracy > self.best_validation_accuracy:
             print('achieved top validation accuracy, saving the checkpoint')
             self.best_validation_accuracy = accuracy
             torch.save(self.model.state_dict(), os.path.join(self.save_dir_name, 'best.ckpt'))
-        self.logger.experiment.track((fscores[0] + fscores[1] + fscores[2]) / 3, name='fscore_average')
-        print(fscores)
+        self.logger.experiment.track(sum([fscores[i] for i in range(80)]) / 80, name='fscore_average')
+        print(fscores, accuracy)
         return {'val_fscores': fscores}
 
     def fit_model(self):

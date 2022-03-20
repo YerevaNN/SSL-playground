@@ -51,6 +51,7 @@ args = parser.parse_args()
 training_dataset_name = "api_dataset_train"
 phase_folder = './session_data/{}/{}/'.format(args.session_id, args.phase)
 labeled_file_path = '{}/train_{}.txt'.format(phase_folder, args.stage)
+print(labeled_file_path)
 unlabeled_file_path = '{}/train_unlabeled_{}.txt'.format(phase_folder, args.stage)
 external_val_file_path = '/lwll/external/{}/validation.txt'.format(args.dataset_name)
 external_val_label_root = '/lwll/external/{}/validation_labels'.format(args.dataset_name)

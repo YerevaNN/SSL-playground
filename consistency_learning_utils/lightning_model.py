@@ -5,7 +5,7 @@ import numpy as np
 import json
 
 import torch
-from .nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
+from nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
 import torch.optim as optim
 
 from torch import nn
@@ -19,9 +19,9 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from aim.pytorch_lightning import AimLogger
 
-from .dataloader import get_train_test_loaders
+from dataloader import get_train_test_loaders
 import zarr
-from nets.oracle import inference
+# from nets.oracle.convnet import inference
 
 def make_target_from_y(y):
     """
@@ -244,10 +244,10 @@ def change_prediction_format(unlab_pred, phd_pred):
         scores = scores.unsqueeze(2)
         scores = scores.repeat(1, 1, 7)
         scores = scores.unsqueeze(1)
-        features = phd_pred[i].cpu()
+        features = phd_pred.cpu()
         features = torch.cat((labels, features), dim=1)
         features = torch.cat((scores, features), dim=1)
-        new_pred.append((boxes, features))
+        new_pred.append(features)
     return new_pred
 
 
@@ -273,11 +273,11 @@ def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=
                                              conf_threshold=conf)
         else:
             raise NotImplementedError
-    elif type == 'convnet':
-        if iou_thresh is not None and model_path is not None:
-            selected_pseudo_labels = inference(pred, model_path, iou_thresh=iou_thresh)
-        else:
-            raise NotImplementedError
+    # elif type == 'convnet':
+    #     if iou_thresh is not None and model_path is not None:
+    #         selected_pseudo_labels = inference(pred, model_path, iou_thresh=iou_thresh)
+    #     else:
+    #         raise NotImplementedError
     else:
         raise NotImplementedError
     return selected_pseudo_labels
