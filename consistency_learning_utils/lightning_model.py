@@ -116,12 +116,12 @@ def model_changed_classifier(reuse_classifier=False, initialize=False, class_num
 
         new_cls_score = nn.Sequential(
             old_cls_score,  # 1024 -> 91
-            nn.Linear(in_features=91, out_features=class_num+1, bias=True)
+            nn.Linear(in_features=91, out_features=1, bias=True)
         )
 
         new_bbox_pred = nn.Sequential(
             old_bbox_pred,
-            nn.Linear(in_features=364, out_features=4*(class_num+1), bias=True)
+            nn.Linear(in_features=364, out_features=4*(1), bias=True)
         )
     elif reuse_classifier == 'concatenate':
         old_cls_score = SkipConnection(model.roi_heads.box_predictor.cls_score)

@@ -46,7 +46,7 @@ for annotation in tqdm(data['annotations']):
     strr = '/lwll/external/coco_2017/train2017/' + imname[annotation['image_id']] + ' '
     w, h = hw[annotation['image_id']]
 
-    xmin = int(annotation['bbox'][0])
+    xmin = int()
     ymin = int(annotation['bbox'][1])
     xmax = xmin + int(annotation['bbox'][2])
     ymax = ymin + int(annotation['bbox'][3])
