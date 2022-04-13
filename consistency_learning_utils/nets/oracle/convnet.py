@@ -24,19 +24,20 @@ from pytorch_lightning import Trainer
 from aim.pytorch_lightning import AimLogger
 import os
 from oracle import get_max_IOU
-
+from torch.nn import BatchNorm2d
+from torchvision.ops import Conv2dNormActivation
 
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(256, 128, 3, padding=1, stride=1) # 256x7x7 -> 129x7x7
+        self.conv1 = nn.Conv2d(256, 128, 3, padding=1, stride=1) # 256x7x7 -> 128x7x7
         self.conv2 = nn.Conv2d(128, 64, 3, padding=1, stride=1) # 64x7x7
         self.conv3 = nn.Conv2d(64, 32, 3, padding=1, stride=1) # 32x7x7
         self.conv4 = nn.Conv2d(32, 16, 3, padding=1, stride=1) # 16x7x7
         self.conv5 = nn.Conv2d(16, 8, 3, padding=1, stride=1) # 8x7x7
         self.conv6 = nn.Conv2d(8, 4, 3, padding=1, stride=1) # 4x7x7
         self.conv7 = nn.Conv2d(4, 1, 3, padding=1, stride=1) # 1x7x7
-        self.linear = nn.Linear(7 * 7, 1)
+        self.linear = nn.Linear(7 * 7, 4)
         self.float()
 
     def forward(self, x):
@@ -50,7 +51,7 @@ class Net(nn.Module):
         x = torch.flatten(x, 1, -1)
         x = self.linear(x)
         x = torch.squeeze(x, 1)
-        x = torch.sigmoid(x)
+        x = torch.softmax(x, dim = 1)
         return x
 
 
@@ -94,8 +95,8 @@ class MyDataset(Dataset):
 
     def __getitem__(self, index: int):
         img_path, bbox, iou, conf, clas = self.image_paths[index].strip().split(' ')
+        iou = int((float(iou) - 1e-7) * 4)
         bbox = [int(float(_)) for _ in bbox[1:-1].split(',')]
-        old_bbox = bbox
         bbox = torch.cuda.FloatTensor(bbox, device="cuda")
         bbox = bbox.unsqueeze(dim = 0)
 
@@ -110,14 +111,14 @@ class MyDataset(Dataset):
 
         features = self.feature_extractor.get_features(image, [bbox])
 
-        target = torch.tensor(float(iou), device='cuda')
-        return features, target, float(conf), int(clas), old_bbox
+        target = torch.tensor((iou), device='cuda')
+        return features, target, float(conf), int(clas)
 
 
 def get_train_test_loaders(feature_data_path, label_root, split, batch_size, class_num, box_score_thresh):
     file_lines = []
     # Format of the file must be like this:
-    # /home/...../...png [xmin,ymin,xmax,ymax]
+    # /home/...../...png [xmin,ymin,xmax,ymax] iou conf cls
     with open(feature_data_path) as f:
         file_lines = f.readlines()
     random.shuffle(file_lines)
@@ -165,7 +166,8 @@ class Oracle(pl.LightningModule):
                             #    callbacks = [checkpoint_callback],
                                gradient_clip_val=0.5,
                             #    check_val_every_n_epoch=1)
-                               val_check_interval = 0.1)
+                               val_check_interval = 0.02)
+        self.loss_fn = nn.CrossEntropyLoss()
         # self.targets_file = os.getcwd() + "/ious_nightowls.npy"
         # self.ious = {i: [] for i in [1, 2, 3]}
 
@@ -222,25 +224,25 @@ class Oracle(pl.LightningModule):
         return {'optimizer': optimizer}
 
     def loss_function(self, y_pred, y_truth):
-        return torch.sqrt(self.mse(y_pred.float(), y_truth.float()))
-    
+        return self.loss_fn(y_pred, y_truth)
+
 
     def training_step(self, batch, batch_inx):
-        inputs, labels, conf, clas, bboxes = batch
+        inputs, labels, conf, clas = batch
         for i in range(len(inputs)):
             inputs[i] = torch.squeeze(inputs[i], 0)
         outputs = self.forward(inputs)
         loss = self.loss_function(outputs, labels)
         for i in range(len(outputs)):
-            label = labels[i]
-            output = outputs[i]
+            label = labels[i].item()
+            output = torch.argmax(outputs[i]).item()
             cl = clas[i].item()
             # self.ious[cl].append(label.cpu().detach().numpy())
-            if label >= 0.5 and output >= 0.5:
+            if label >= 2 and output >= 2:
                 self.global_info_train[cl]['tp'] += 1
-            elif label < 0.5 and output >= 0.5:
+            elif label < 2 and output >= 2:
                 self.global_info_train[cl]['fp'] += 1
-            elif label >= 0.5 and output < 0.5:
+            elif label >= 2 and output < 2:
                 self.global_info_train[cl]['fn'] += 1
 
         self.logger.experiment.track(loss.item(), name='training_loss')
@@ -259,28 +261,21 @@ class Oracle(pl.LightningModule):
         return self.validation_step(batch, batch_inx)
 
     def validation_step(self, batch, batch_idx):
-        inputs, labels, conf, clas, bboxes = batch
+        inputs, labels, conf, clas = batch
         for i in range(len(inputs)):
             inputs[i] = torch.squeeze(inputs[i], 0)
         outputs = self.forward(inputs)
-        lines = []
-        for i in range(len(inputs)):
-            boxstr = str(bboxes[0][i].item()) + ',' + str(bboxes[1][i].item()) + ',' + str(bboxes[2][i].item()) + ',' + str(bboxes[3][i].item())
-            lines.append(boxstr + ' ' + str(labels[i].item()) + ' ' + str(conf[i].item()) + ' ' + str(clas[i].item()) + ' ' + str(outputs[i].item()) + '\n')
-
-        with open("/home/hkhachatrian/SSL-playground/consistency_learning_utils/nets/oracle/feature_data/A1_on_night.txt", "a+") as f:            
-            f.writelines(lines)
-        
         loss = self.loss_function(outputs, labels)
         for i in range(len(outputs)):
-            label = labels[i]
-            output = outputs[i]
+            label = labels[i].item()
+            output = torch.argmax(outputs[i]).item()
             cl = clas[i].item()
-            if label >= 0.5 and output >= 0.5:
+            print(label, output, cl)
+            if label >= 2 and output >= 2:
                 self.global_info_val[cl]['tp'] += 1
-            elif label < 0.5 and output >= 0.5:
+            elif label < 2 and output >= 2:
                 self.global_info_val[cl]['fp'] += 1
-            elif label >= 0.5 and output < 0.5:
+            elif label >= 2 and output < 2:
                 self.global_info_val[cl]['fn'] += 1
 
         self.logger.experiment.track(loss.item(), name='val_loss')
@@ -302,7 +297,8 @@ class Oracle(pl.LightningModule):
                 self.best_validation_accuracy = accuracy
                 torch.save(self.model.state_dict(), os.path.join(self.save_dir_name, 'our_best.ckpt'))
         # self.logger.experiment.track(sum([fscores[i] for i in range(91)]) / 80, name='fscore_average')
-        print('accuracy: ', accuracy)
+        print('fscores: ', fscores)
+        print('accuracy (avg fscore): ', accuracy)
         return {'val_accuracy': accuracy}
     
     def test_epoch_end(self, results):
@@ -372,4 +368,3 @@ def inference(pred, model_path, iou_thresh=0.5, experiment_name=""):
     output = model(pred)
     selected_predictions = select_pls(output, boxes_per_image, old_pred, iou_thresh)
     return selected_predictions
-
