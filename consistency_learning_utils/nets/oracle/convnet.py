@@ -93,7 +93,7 @@ class MyDataset(Dataset):
         return max_iou
 
     def __getitem__(self, index: int):
-        img_path, bbox, iou, conf, clas = self.image_paths[index].strip().split(' ')
+        img_path, bbox, iou = self.image_paths[index].strip().split(' ')
         bbox = [int(float(_)) for _ in bbox[1:-1].split(',')]
         old_bbox = bbox
         bbox = torch.cuda.FloatTensor(bbox, device="cuda")
@@ -111,7 +111,7 @@ class MyDataset(Dataset):
         features = self.feature_extractor.get_features(image, [bbox])
 
         target = torch.tensor(float(iou), device='cuda')
-        return features, target, float(conf), int(clas), old_bbox
+        return features, target, old_bbox
 
 
 def get_train_test_loaders(feature_data_path, label_root, split, batch_size, class_num, box_score_thresh):
@@ -226,7 +226,7 @@ class Oracle(pl.LightningModule):
     
 
     def training_step(self, batch, batch_inx):
-        inputs, labels, conf, clas, bboxes = batch
+        inputs, labels, bboxes = batch
         for i in range(len(inputs)):
             inputs[i] = torch.squeeze(inputs[i], 0)
         outputs = self.forward(inputs)
@@ -234,7 +234,8 @@ class Oracle(pl.LightningModule):
         for i in range(len(outputs)):
             label = labels[i]
             output = outputs[i]
-            cl = clas[i].item()
+            # cl = clas[i].item()
+            cl = 1
             # self.ious[cl].append(label.cpu().detach().numpy())
             if label >= 0.5 and output >= 0.5:
                 self.global_info_train[cl]['tp'] += 1
@@ -259,23 +260,24 @@ class Oracle(pl.LightningModule):
         return self.validation_step(batch, batch_inx)
 
     def validation_step(self, batch, batch_idx):
-        inputs, labels, conf, clas, bboxes = batch
+        inputs, labels, bboxes = batch
         for i in range(len(inputs)):
             inputs[i] = torch.squeeze(inputs[i], 0)
         outputs = self.forward(inputs)
         lines = []
         for i in range(len(inputs)):
             boxstr = str(bboxes[0][i].item()) + ',' + str(bboxes[1][i].item()) + ',' + str(bboxes[2][i].item()) + ',' + str(bboxes[3][i].item())
-            lines.append(boxstr + ' ' + str(labels[i].item()) + ' ' + str(conf[i].item()) + ' ' + str(clas[i].item()) + ' ' + str(outputs[i].item()) + '\n')
+            lines.append(boxstr + ' ' + str(labels[i].item()) + ' ' + str(outputs[i].item()) + '\n')
 
-        with open("/home/hkhachatrian/SSL-playground/consistency_learning_utils/nets/oracle/feature_data/A1_on_night.txt", "a+") as f:            
+        with open("/home/hkhachatrian/SSL-playground/consistency_learning_utils/nets/oracle/feature_data/A1_on_night_artificial.txt", "a+") as f:            
             f.writelines(lines)
         
         loss = self.loss_function(outputs, labels)
         for i in range(len(outputs)):
             label = labels[i]
             output = outputs[i]
-            cl = clas[i].item()
+            # cl = clas[i].item()
+            cl = 1
             if label >= 0.5 and output >= 0.5:
                 self.global_info_val[cl]['tp'] += 1
             elif label < 0.5 and output >= 0.5:
