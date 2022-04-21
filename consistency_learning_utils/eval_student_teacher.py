@@ -57,14 +57,14 @@ hparams['total_steps_student'] = 0
 
 model = STAC(hparams)
       
-model.load_checkpoint_teacher('/home/hkhachatrian/SSL-playground/session_data/9rHyS6FE2WOAkSvsy9dX/adaption/nightowls_adaption_3_from_coco_0_nightowls_stag3_sub/teacher/last.ckpt')
-model.load_checkpoint_student('/home/hkhachatrian/SSL-playground/session_data/9rHyS6FE2WOAkSvsy9dX/adaption/nightowls_adaption_3_from_coco_0_nightowls_stag3_sub/student/last.ckpt')
+model.load_checkpoint_teacher('/home/hkhachatrian/SSL-playground_submission/SSL-playground/session_data/9rHyS6FE2WOAkSvsy9dX/adaption/nightowls_adaption_3_from_coco_0_nightowls_stage3_dynamic_threshold_ema_1_/teacher/last.ckpt')
+# model.load_checkpoint_student('/home/hkhachatrian/SSL-playground/session_data/9rHyS6FE2WOAkSvsy9dX/adaption/nightowls_adaption_3_from_coco_0_nightowls_stag3_sub/student/last.ckpt')
 
 # model.test()
 model.eval()
 images = []
-f1 = open("/home/hkhachatrian/SSL-playground/consistency_learning_utils/nets/oracle/feature_data/teacher_night_vs_gt.txt", "a+")
-f2 = open("/home/hkhachatrian/SSL-playground/consistency_learning_utils/nets/oracle/feature_data/student_night_vs_gt.txt", "a+")
+# f1 = open("/home/hkhachatrian/SSL-playground/consistency_learning_utils/nets/oracle/feature_data/teacher_nightowls_unlabeled_vs_gt.txt", "a+")
+# f2 = open("/home/hkhachatrian/SSL-playground/consistency_learning_utils/nets/oracle/feature_data/student_night_vs_gt.txt", "a+")
 
 with open('/home/hkhachatrian/SSL-playground/session_data/9rHyS6FE2WOAkSvsy9dX/adaption/train_unlabeled_3.txt') as images_path:
     for im_path in images_path:
@@ -106,32 +106,38 @@ with open('/home/hkhachatrian/SSL-playground/session_data/9rHyS6FE2WOAkSvsy9dX/a
                 if iou > teacher_max_iou:
                     selected_gt_box = [xmin, ymin, xmax, ymax]
                     teacher_max_iou = iou
-            if len(selected_gt_box):
-                str_teacher = im_path + ' ' + '[' + str(t_xmin) + ',' + str(t_ymin) + ',' + str(t_xmax) + ',' + str(t_ymax) + ',' + str(t_label) + ',' + str(t_score) + ']' +  '[' + str(selected_gt_box[0]) + ','+ str(selected_gt_box[1]) + ',' + str(selected_gt_box[2]) + ',' + str(selected_gt_box[3]) + ']' + '\n'
-                f1.writelines(str_teacher)
-        for j in range(len(student_boxes)):
-            student_max_iou = 0 
-            s_xmin = student_boxes[j][0].item()
-            s_ymin = student_boxes[j][1].item()
-            s_xmax = student_boxes[j][2].item()
-            s_ymax = student_boxes[j][3].item()
-            s_label = student_labels[j].item()
-            s_score = student_scores[j].item()
-            selected_gt_box = []
-            for gt in target_boxes:
-                xmin = gt['bndbox']['xmin'] 
-                ymin = gt['bndbox']['ymin']
-                xmax = gt['bndbox']['xmax']
-                ymax = gt['bndbox']['ymax']
-                iou = bb_intersection_over_union([s_xmin, s_ymin, s_xmax, s_ymax], [xmin, ymin, xmax, ymax])
-                if iou > student_max_iou:
-                    selected_gt_box = [xmin, ymin, xmax, ymax]
-                    student_max_iou = iou
-            if len(selected_gt_box):
-                str_student = im_path + ' ' + '[' + str(s_xmin) + ',' + str(s_ymin) + ',' + str(s_xmax) + ',' + str(s_ymax) + ',' + str(s_label) + ',' + str(s_score) + ']' +  '[' + str(selected_gt_box[0]) + ','+ str(selected_gt_box[1]) + ',' + str(selected_gt_box[2]) + ',' + str(selected_gt_box[3]) + ']' + '\n'
-                f2.writelines(str_student)
-f1.close()
-f2.close()
+                str_teacher = im_path + ' ' + '[' + str(t_xmin) + ',' + str(t_ymin) + ',' + str(t_xmax) + ',' + str(t_ymax) + '] ' + str(teacher_max_iou)+ ' ' + str(t_score) + ' ' + str(t_label) + '\n'
+            f1 = open("/home/hkhachatrian/SSL-playground/consistency_learning_utils/nets/oracle/feature_data/teacher_boxes_nightowls_unlabeled_vs_gt.txt", "a+")
+            f1.writelines(str_teacher)
+            f1.close()
+            # if len(selected_gt_box):
+            #     str_teacher = im_path + ' ' + '[' + str(t_xmin) + ',' + str(t_ymin) + ',' + str(t_xmax) + ',' + str(t_ymax) + ',' + str(t_label) + ',' + str(t_score) + '] ' +  '[' + str(selected_gt_box[0]) + ','+ str(selected_gt_box[1]) + ',' + str(selected_gt_box[2]) + ',' + str(selected_gt_box[3]) + ']' + '\n'
+            #     f1 = open("/home/hkhachatrian/SSL-playground/consistency_learning_utils/nets/oracle/feature_data/teacher_nightowls_unlabeled_vs_gt.txt", "a+")
+            #     f1.writelines(str_teacher)
+            #     f1.close()
+        # for j in range(len(student_boxes)):
+        #     student_max_iou = 0 
+        #     s_xmin = student_boxes[j][0].item()
+        #     s_ymin = student_boxes[j][1].item()
+        #     s_xmax = student_boxes[j][2].item()
+        #     s_ymax = student_boxes[j][3].item()
+        #     s_label = student_labels[j].item()
+        #     s_score = student_scores[j].item()
+        #     selected_gt_box = []
+            # for gt in target_boxes:
+            #     xmin = gt['bndbox']['xmin'] 
+            #     ymin = gt['bndbox']['ymin']
+            #     xmax = gt['bndbox']['xmax']
+            #     ymax = gt['bndbox']['ymax']
+            #     iou = bb_intersection_over_union([s_xmin, s_ymin, s_xmax, s_ymax], [xmin, ymin, xmax, ymax])
+            #     if iou > student_max_iou:
+            #         selected_gt_box = [xmin, ymin, xmax, ymax]
+            #         student_max_iou = iou
+            # if len(selected_gt_box):
+            #     str_student = im_path + ' ' + '[' + str(s_xmin) + ',' + str(s_ymin) + ',' + str(s_xmax) + ',' + str(s_ymax) + ',' + str(s_label) + ',' + str(s_score) + ']' +  '[' + str(selected_gt_box[0]) + ','+ str(selected_gt_box[1]) + ',' + str(selected_gt_box[2]) + ',' + str(selected_gt_box[3]) + ']' + '\n'
+            #     f2.writelines(str_student)
+# f1.close()
+# f2.close()
 
 
    

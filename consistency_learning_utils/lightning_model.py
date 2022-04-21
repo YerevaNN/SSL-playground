@@ -245,8 +245,20 @@ class STAC(pl.LightningModule):
     def custom_validation_start(self):
         self.student_mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
                                                          num_classes=self.hparams['class_num'])
+        self.student_mAP_1 = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
+                                                         num_classes=1)
+        self.student_mAP_2 = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
+                                                         num_classes=1)
+        self.student_mAP_3 = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
+                                                         num_classes=1)
         self.teacher_mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
                                                          num_classes=self.hparams['class_num'])
+        self.teacher_mAP_1 = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
+                                                         num_classes=1)
+        self.teacher_mAP_2 = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
+                                                         num_classes=1)
+        self.teacher_mAP_3 = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
+                                                         num_classes=1)
         self.prediction_cache = {}
         self.validation_student_boxes = 0
         self.validation_teacher_boxes = 0
@@ -523,43 +535,52 @@ class STAC(pl.LightningModule):
         non_zero_boxes = []
         target = []
 
-        # thresholds = np.zeros(self.hparams['class_num'] + 1)
-        # if self.thresholding_method == 'constant':
-        #     thresholds += self.confidence_threshold
-        # elif self.thresholding_method == 'dynamic1':
-        #     # calculate stats for this batch
-        #     box_count = 0
-        #     for sample_pred in unlab_pred:
-        #         labels = sample_pred['labels'].cpu()
-        #         scores = sample_pred['scores'].cpu()
-        #         for l, s in zip(labels, scores):
-        #             thresholds[l] += s
-        #             box_count += 1
-        #     if box_count == 0:
-        #         thresholds += self.confidence_threshold
-        #     else:
-        #         p = np.power(thresholds, 0.1)
-        #         thresholds = p / p.max() * self.confidence_threshold
+        thresholds = np.zeros(self.hparams['class_num'] + 1)
+        if self.thresholding_method == 'constant':
+            thresholds += self.confidence_threshold
+        elif self.thresholding_method == 'dynamic1':
+            # calculate stats for this batch
+            box_count = 0
+            for sample_pred in unlab_pred:
+                labels = sample_pred['labels'].cpu()
+                scores = sample_pred['scores'].cpu()
+                for l, s in zip(labels, scores):
+                    thresholds[l] += s
+                    box_count += 1
+            if box_count == 0:
+                thresholds += self.confidence_threshold
+            else:
+                p = np.power(thresholds, 0.1)
+                thresholds = p / p.max() * self.confidence_threshold
+        elif self.thresholding_method == 'precomputed':
+            thresholds = np.array([0 , 0.80,  0.070, 0.088])
 
         #     with open('{}_thresholds.txt'.format(self.hparams['version_name']), 'a') as f:
         #         f.write(' '.join(["{:.2f}".format(t) for t in thresholds]) + '\n')
-        unlab_pred = filter_small(unlab_pred)
+        # unlab_pred = filter_small(unlab_pred)
+        pseudo_boxes_all_per_class = {i: 0 for i in range(self.hparams['class_num'])}
+        pseudo_boxes_confindent_per_class = {i: 0 for i in range(self.hparams['class_num'])}
+
         for i, sample_pred in enumerate(unlab_pred):
             boxes = sample_pred['boxes'].cpu()
             labels = sample_pred['labels'].cpu()
             scores = sample_pred['scores'].cpu()
-
+            for l in range(len(labels)):
+                pseudo_boxes_all_per_class[labels[l].item() - 1] += 1
             index = []
             target_boxes = []
             target_labels = []
             for j in range(len(labels)):
-                # if scores[j] < thresholds[labels[j]]:
-                index.append(j)
+                if scores[j] < thresholds[labels[j]]:
+                    index.append(j)
             pseudo_boxes_all += len(boxes)
 
             boxes = np.delete(boxes, index, axis=0)
             labels = np.delete(labels, index)
             scores = np.delete(scores, index)
+
+            for lc in range(len(labels)):
+                pseudo_boxes_confindent_per_class[labels[lc].item() - 1] += 1
 
             if len(boxes) > 0:
                 non_zero_boxes.append(i)
@@ -592,13 +613,20 @@ class STAC(pl.LightningModule):
         #                                  name='teacher_weight', model=self.onTeacher,
         #                                  stage=self.stage)
         #     break
+        for cl in range(self.hparams['class_num']):
+            self.logger.experiment.track(
+                pseudo_boxes_all_per_class[cl] / len(unlab_pred),
+                name='pseudo_boxes_all_{}'.format(cl), context={'model':self.onTeacher, 'stage':self.stage})
+            self.logger.experiment.track(
+                pseudo_boxes_confindent_per_class[cl] / len(unlab_pred),
+                name='pseudo_boxes_confident_{}'.format(cl), context={'model':self.onTeacher, 'stage':self.stage})
 
         self.logger.experiment.track(
             pseudo_boxes_all / len(unlab_pred),
             name='pseudo_boxes_all', context={'model':self.onTeacher, 'stage':self.stage})
         self.logger.experiment.track(
             pseudo_boxes_confident / len(unlab_pred),
-            name='pseudo_boxes_all', context={'model':self.onTeacher, 'stage':self.stage})
+            name='pseudo_boxes_confident', context={'model':self.onTeacher, 'stage':self.stage})
         return unsup_loss
 
     def teacher_training_step(self, batch_list):
@@ -693,13 +721,25 @@ class STAC(pl.LightningModule):
 
         self.validation_images += batch_size
 
-        output_tensor = torch.zeros(size=(batch_size, 3, 200, 7))
+        output_tensor = torch.zeros(size=(batch_size, 12, 200, 7))
         # 3 = truth, teacher, student
 
         for i in range(batch_size):
             student_pred_for_mAP = []
+            student_pred_for_mAP_0 = []
+            student_pred_for_mAP_1 = []
+            student_pred_for_mAP_2 = []
             teacher_pred_for_mAP = []
+            teacher_pred_for_mAP_0 = []
+            teacher_pred_for_mAP_1 = []
+            teacher_pred_for_mAP_2 = []
+
+
             truth_for_mAP = []
+            truth_for_mAP_0 = []
+            truth_for_mAP_1 = []
+            truth_for_mAP_2 = []
+
             img_id = image_paths[i]
 
             student_boxes = student_y_hat[i]['boxes'].cpu().numpy()
@@ -713,29 +753,109 @@ class STAC(pl.LightningModule):
             for (j, box) in enumerate(student_boxes):
                 student_pred_for_mAP.append([box[0], box[1], box[2], box[3],
                                              student_labels[j], student_scores[j]])
+                if student_labels[j] == 1:
+                    student_pred_for_mAP_0.append([box[0], box[1], box[2], box[3],
+                                             student_labels[j], student_scores[j]])
+                if student_labels[j] == 2:
+                    student_pred_for_mAP_1.append([box[0], box[1], box[2], box[3],
+                                             student_labels[j], student_scores[j]])
+                                
+                if student_labels[j] == 3:
+                    student_pred_for_mAP_2.append([box[0], box[1], box[2], box[3],
+                                             student_labels[j], student_scores[j]])                
 
             for (j, box) in enumerate(teacher_boxes):
                 teacher_pred_for_mAP.append([box[0], box[1], box[2], box[3],
                                              teacher_labels[j], teacher_scores[j]])
+                
+                if teacher_labels[j] == 1:
+                    teacher_pred_for_mAP_0.append([box[0], box[1], box[2], box[3],
+                                             teacher_labels[j], teacher_scores[j]])
+                if teacher_labels[j] == 2:
+                    teacher_pred_for_mAP_1.append([box[0], box[1], box[2], box[3],
+                                             teacher_labels[j], teacher_scores[j]])
+                                
+                if teacher_labels[j] == 3:
+                    teacher_pred_for_mAP_2.append([box[0], box[1], box[2], box[3],
+                                             teacher_labels[j], teacher_scores[j]]) 
 
             for box in y[i]:
                 xmin = int(box['bndbox']['xmin'])
                 xmax = int(box['bndbox']['xmax'])
                 ymin = int(box['bndbox']['ymin'])
                 ymax = int(box['bndbox']['ymax'])
+
+                if int(box['label']) == 1:
+                    truth_for_mAP_0.append([xmin, ymin, xmax, ymax, int(box['label']), 0, 0])
+                if int(box['label']) == 2:
+                    truth_for_mAP_1.append([xmin, ymin, xmax, ymax, int(box['label']), 0, 0])
+                                
+                if int(box['label']) == 3:
+                    truth_for_mAP_2.append([xmin, ymin, xmax, ymax, int(box['label']), 0, 0]) 
+
                 truth_for_mAP.append([xmin, ymin, xmax, ymax, int(box['label']), 0, 0])
 
             # self.student_mAP.add(np.array(student_pred_for_mAP), np.array(truth_for_mAP))
             # self.teacher_mAP.add(np.array(teacher_pred_for_mAP), np.array(truth_for_mAP))
             output_tensor[i][0][:min(200,len(truth_for_mAP))] = torch.tensor(np.array(truth_for_mAP)[:200])
+            if len(truth_for_mAP_0) == 0:
+                output_tensor[i][1][:min(200, len(truth_for_mAP_0))] = torch.reshape(torch.tensor(np.array(truth_for_mAP_0)), (0, 7))
+            else:
+                output_tensor[i][1][:min(200, len(truth_for_mAP_0))] = torch.tensor(np.array(truth_for_mAP_0)[:min(200, len(truth_for_mAP_0))])
+            
+            if len(truth_for_mAP_1) == 0:
+                output_tensor[i][2][:min(200, len(truth_for_mAP_1))] =  torch.reshape(torch.tensor(np.array(truth_for_mAP_1)), (0, 7))
+            else:
+                output_tensor[i][2][:min(200, len(truth_for_mAP_1))] = torch.tensor(np.array(truth_for_mAP_1)[:min(200, len(truth_for_mAP_1))])
+
+            if len(truth_for_mAP_2) == 0:
+                output_tensor[i][3][:min(200, len(truth_for_mAP_2))] =  torch.reshape(torch.tensor(np.array(truth_for_mAP_2)), (0, 7))
+            else:
+                output_tensor[i][3][:min(200, len(truth_for_mAP_2))] = torch.tensor(np.array(truth_for_mAP_2)[:min(200, len(truth_for_mAP_2))])
+
             student_pred_for_mAP_tensor = torch.tensor(np.array(student_pred_for_mAP))
+            student_pred_for_mAP_0_tensor = torch.tensor(np.array(student_pred_for_mAP_0))
+            student_pred_for_mAP_1_tensor = torch.tensor(np.array(student_pred_for_mAP_1))
+            student_pred_for_mAP_2_tensor = torch.tensor(np.array(student_pred_for_mAP_2))
+
             teacher_pred_for_mAP_tensor = torch.tensor(np.array(teacher_pred_for_mAP))
+            teacher_pred_for_mAP_0_tensor = torch.tensor(np.array(teacher_pred_for_mAP_0))
+            teacher_pred_for_mAP_1_tensor = torch.tensor(np.array(teacher_pred_for_mAP_1))
+            teacher_pred_for_mAP_2_tensor = torch.tensor(np.array(teacher_pred_for_mAP_2))
+
+
             if len(teacher_pred_for_mAP) == 0:
                 teacher_pred_for_mAP_tensor = torch.reshape(torch.tensor(np.array(teacher_pred_for_mAP)), (0, 6))
+
+            if len(teacher_pred_for_mAP_0) == 0:
+                teacher_pred_for_mAP_0_tensor = torch.reshape(torch.tensor(np.array(teacher_pred_for_mAP_0)), (0, 6))
+
+            if len(teacher_pred_for_mAP_1) == 0:
+                teacher_pred_for_mAP_1_tensor = torch.reshape(torch.tensor(np.array(teacher_pred_for_mAP_1)), (0, 6))
+
+            if len(teacher_pred_for_mAP_2) == 0:
+                teacher_pred_for_mAP_2_tensor = torch.reshape(torch.tensor(np.array(teacher_pred_for_mAP_2)), (0, 6))
+
             if len(student_pred_for_mAP) == 0:
                 student_pred_for_mAP_tensor = torch.reshape(torch.tensor(np.array(student_pred_for_mAP)), (0, 6))
-            output_tensor[i][1][:len(teacher_pred_for_mAP),:6] = teacher_pred_for_mAP_tensor
-            output_tensor[i][2][:len(student_pred_for_mAP),:6] = student_pred_for_mAP_tensor
+
+            if len(student_pred_for_mAP_0) == 0:
+                student_pred_for_mAP_0_tensor = torch.reshape(torch.tensor(np.array(student_pred_for_mAP_0)), (0, 6))
+
+            if len(student_pred_for_mAP_1) == 0:
+                student_pred_for_mAP_1_tensor = torch.reshape(torch.tensor(np.array(student_pred_for_mAP_1)), (0, 6))
+
+            if len(student_pred_for_mAP_2) == 0:
+                student_pred_for_mAP_2_tensor = torch.reshape(torch.tensor(np.array(student_pred_for_mAP_2)), (0, 6))
+
+            output_tensor[i][4][:len(teacher_pred_for_mAP),:6] = teacher_pred_for_mAP_tensor
+            output_tensor[i][5][:len(teacher_pred_for_mAP_0),:6] = teacher_pred_for_mAP_0_tensor
+            output_tensor[i][6][:len(teacher_pred_for_mAP_1),:6] = teacher_pred_for_mAP_1_tensor
+            output_tensor[i][7][:len(teacher_pred_for_mAP_2),:6] = teacher_pred_for_mAP_2_tensor
+            output_tensor[i][8][:len(student_pred_for_mAP),:6] = student_pred_for_mAP_tensor
+            output_tensor[i][9][:len(student_pred_for_mAP_0),:6] = student_pred_for_mAP_0_tensor
+            output_tensor[i][10][:len(student_pred_for_mAP_1),:6] = student_pred_for_mAP_1_tensor
+            output_tensor[i][11][:len(student_pred_for_mAP_2),:6] = student_pred_for_mAP_2_tensor
 
             self.validation_teacher_boxes += len(teacher_pred_for_mAP)
             self.validation_student_boxes += len(student_pred_for_mAP)
@@ -764,15 +884,36 @@ class STAC(pl.LightningModule):
                 for batch in batch_pairs:
                     for image in batch: # (3, 100, 6)
                         truth = filter_non_zero(image[0], lim=7)
-                        teacher_pred = filter_non_zero(image[1])
-                        student_pred = filter_non_zero(image[2])
+                        truth_1 = filter_non_zero(image[1], lim=7)
+                        truth_2 = filter_non_zero(image[2], lim=7)
+                        truth_3 = filter_non_zero(image[3], lim=7)
+                        teacher_pred = filter_non_zero(image[4])
+                        teacher_pred_1 = filter_non_zero(image[5])
+                        teacher_pred_2 = filter_non_zero(image[6])
+                        teacher_pred_3 = filter_non_zero(image[7])
+                        student_pred = filter_non_zero(image[8])
+                        student_pred_1 = filter_non_zero(image[9])
+                        student_pred_2 = filter_non_zero(image[10])
+                        student_pred_3 = filter_non_zero(image[11])
                         self.student_mAP.add(student_pred, truth)
+                        self.student_mAP_1.add(student_pred_1, truth_1)
+                        self.student_mAP_2.add(student_pred_2, truth_2)
+                        self.student_mAP_1.add(student_pred_3, truth_3)
                         self.teacher_mAP.add(teacher_pred, truth)
+                        self.teacher_mAP_1.add(teacher_pred_1, truth_1)
+                        self.teacher_mAP_2.add(teacher_pred_2, truth_2)
+                        self.teacher_mAP_1.add(teacher_pred_3, truth_3)
 
             # mAP1 = self.mAP.value(iou_thresholds=0.5, recall_thresholds=np.arange(0., 1.1, 0.1))['mAP']
             ious = np.arange(0.5, 1.0, 0.05)
             student_mAP2 = self.student_mAP.value(iou_thresholds=0.5)['mAP']
             student_mAP3 = self.student_mAP.value(iou_thresholds=ious,
+                                  recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
+            student_1_mAP3 = self.student_mAP_1.value(iou_thresholds=ious,
+                                  recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
+            student_2_mAP3 = self.student_mAP_2.value(iou_thresholds=ious,
+                                  recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
+            student_3_mAP3 = self.student_mAP_3.value(iou_thresholds=ious,
                                   recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
 
             self.logger.experiment.track(float(student_mAP2), name='map2', context={'model':False, 'stage':self.stage})
@@ -781,8 +922,25 @@ class STAC(pl.LightningModule):
                 self.logger.experiment.track(
                     float(np.mean([x['ap'] for x in student_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
                     context={'model':False, 'stage':self.stage})
+                self.logger.experiment.track(
+                    float(np.mean([x['ap'] for x in student_1_mAP3[iou].values()])), name='AP{:.0f}_1'.format(iou*100),
+                    context={'model':False, 'stage':self.stage})
+                self.logger.experiment.track(
+                    float(np.mean([x['ap'] for x in student_2_mAP3[iou].values()])), name='AP{:.0f}_2'.format(iou*100),
+                    context={'model':False, 'stage':self.stage})
+                self.logger.experiment.track(
+                    float(np.mean([x['ap'] for x in student_3_mAP3[iou].values()])), name='AP{:.0f}_3'.format(iou*100),
+                    context={'model':False, 'stage':self.stage})
+
             teacher_mAP2 = self.teacher_mAP.value(iou_thresholds=0.5)['mAP']
             teacher_mAP3 = self.teacher_mAP.value(iou_thresholds=ious,
+                                  recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
+
+            teacher_1_mAP3 = self.teacher_mAP_1.value(iou_thresholds=ious,
+                                  recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
+            teacher_2_mAP3 = self.teacher_mAP_2.value(iou_thresholds=ious,
+                                  recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
+            teacher_3_mAP3 = self.teacher_mAP_3.value(iou_thresholds=ious,
                                   recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
 
             self.logger.experiment.track(float(teacher_mAP2), name='map2', context={'model':True, 'stage':self.stage})
@@ -790,6 +948,17 @@ class STAC(pl.LightningModule):
             for iou in ious:
                 self.logger.experiment.track(
                     float(np.mean([x['ap'] for x in teacher_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
+                    context={'model':True, 'stage':self.stage})
+                self.logger.experiment.track(
+                    float(np.mean([x['ap'] for x in teacher_1_mAP3[iou].values()])), name='AP{:.0f}_1'.format(iou*100),
+                    context={'model':True, 'stage':self.stage})
+                
+                self.logger.experiment.track(
+                    float(np.mean([x['ap'] for x in teacher_2_mAP3[iou].values()])), name='AP{:.0f}_2'.format(iou*100),
+                    context={'model':True, 'stage':self.stage})
+                
+                self.logger.experiment.track(
+                    float(np.mean([x['ap'] for x in teacher_3_mAP3[iou].values()])), name='AP{:.0f}_3'.format(iou*100),
                     context={'model':True, 'stage':self.stage})
 
             # val_loss as a surrogate for mAP
