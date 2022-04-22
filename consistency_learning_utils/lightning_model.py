@@ -22,6 +22,37 @@ from aim.pytorch_lightning import AimLogger
 from .dataloader import get_train_test_loaders
 from .nets.oracle.convnet import inference
 
+def get_target(image_name: str):
+
+        label_root = '/home/hkhachatrian/SSL-playground/session_data/9rHyS6FE2WOAkSvsy9dX/adaption/labels/'
+        image_name = '.'.join(image_name.split('.')[:-1]) + '.txt'  # replace .jpg (or whatever) to .txt
+        label_path = os.path.join(label_root, image_name)
+
+        target = []
+        with open(label_path) as f:
+            for line in f:
+                line_arr = [float(t) for t in line.split(' ')]
+#                 label, x_center_rel, y_center_rel, bbox_width, bbox_height = line_arr
+                label, xmin, ymin, xmax, ymax = line_arr
+                box = {}
+                box['label'] = int(label)
+                box['bndbox'] = {}
+#                 box['bndbox']['xmin'] = float(x_center_rel - bbox_width/2) * width
+#                 box['bndbox']['ymin'] = float(y_center_rel - bbox_height/2) * height
+#                 box['bndbox']['xmax'] = float(x_center_rel + bbox_width/2) * width
+#                 box['bndbox']['ymax'] = float(y_center_rel + bbox_height/2) * height
+                box['bndbox']['xmin'] = int(xmin)
+                box['bndbox']['ymin'] = int(ymin)
+                box['bndbox']['xmax'] = int(xmax)
+                box['bndbox']['ymax'] = int(ymax)
+                if box['bndbox']['ymax'] <= box['bndbox']['ymin']:
+                    box['bndbox']['ymax'] += 1
+                if box['bndbox']['xmax'] <= box['bndbox']['xmin']:
+                    box['bndbox']['xmax'] += 1
+                target.append(box)
+
+        return target
+
 def make_target_from_y(y):
     """
     Converts a list of M objects like
@@ -684,17 +715,20 @@ class STAC(pl.LightningModule):
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
 
         # unlab_pred = filter_small(unlab_pred)
+        predictions = []
+
         teacher_boxes = []
-        for sample_pred in unlab_pred:
-            cur_boxes = sample_pred['boxes']
+        for s in range(len(unlab_pred)):
+            cur_boxes = unlab_pred[s]['boxes']
+            target_boxes = get_target(unlabeled_image_paths[s])
             teacher_boxes.append(cur_boxes)
 
-        self.phd.eval()
-        phd_pred = self.phd.forward(unlabeled_x, teacher_boxes=teacher_boxes)
-        phd_pred = torch.split(phd_pred, [x.shape[0] for x in teacher_boxes])
-        kept_pred = [i for i in range(len(phd_pred)) if len(phd_pred[i].shape) == 4 and phd_pred[i].shape[0] > 0]
-        phd_pred = [phd_pred[i] for i in range(len(phd_pred)) if i in kept_pred]
-        unlab_pred = [unlab_pred[i] for i in range(len(unlab_pred)) if i in kept_pred]
+        # self.phd.eval()
+        # phd_pred = self.phd.forward(unlabeled_x, teacher_boxes=teacher_boxes)
+        # phd_pred = torch.split(phd_pred, [x.shape[0] for x in teacher_boxes])
+        # kept_pred = [i for i in range(len(phd_pred)) if len(phd_pred[i].shape) == 4 and phd_pred[i].shape[0] > 0]
+        # phd_pred = [phd_pred[i] for i in range(len(phd_pred)) if i in kept_pred]
+        # unlab_pred = [unlab_pred[i] for i in range(len(unlab_pred)) if i in kept_pred]
 
 
         # save_image(unlabeled_x[0], 'unlabeled.png')
