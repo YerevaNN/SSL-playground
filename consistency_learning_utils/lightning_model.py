@@ -8,7 +8,7 @@ import torch
 from .nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
 import torch.optim as optim
 
-from torch import nn
+from torch import logit, nn
 from collections import OrderedDict
 from pytorch_lightning import Trainer
 from torchvision.utils import save_image
@@ -25,30 +25,19 @@ from .nets.oracle.convnet import inference
 def get_target(image_name: str):
 
         label_root = '/home/hkhachatrian/SSL-playground/session_data/9rHyS6FE2WOAkSvsy9dX/adaption/labels/'
-        image_name = '.'.join(image_name.split('.')[:-1]) + '.txt'  # replace .jpg (or whatever) to .txt
+        image_name = image_name.split('/')[-1].split('.')[0] + '.txt'  # replace .jpg (or whatever) to .txt
         label_path = os.path.join(label_root, image_name)
 
         target = []
         with open(label_path) as f:
             for line in f:
                 line_arr = [float(t) for t in line.split(' ')]
-#                 label, x_center_rel, y_center_rel, bbox_width, bbox_height = line_arr
                 label, xmin, ymin, xmax, ymax = line_arr
-                box = {}
-                box['label'] = int(label)
-                box['bndbox'] = {}
-#                 box['bndbox']['xmin'] = float(x_center_rel - bbox_width/2) * width
-#                 box['bndbox']['ymin'] = float(y_center_rel - bbox_height/2) * height
-#                 box['bndbox']['xmax'] = float(x_center_rel + bbox_width/2) * width
-#                 box['bndbox']['ymax'] = float(y_center_rel + bbox_height/2) * height
-                box['bndbox']['xmin'] = int(xmin)
-                box['bndbox']['ymin'] = int(ymin)
-                box['bndbox']['xmax'] = int(xmax)
-                box['bndbox']['ymax'] = int(ymax)
-                if box['bndbox']['ymax'] <= box['bndbox']['ymin']:
-                    box['bndbox']['ymax'] += 1
-                if box['bndbox']['xmax'] <= box['bndbox']['xmin']:
-                    box['bndbox']['xmax'] += 1
+                box = [int(xmin), int(ymin), int(xmax), int(ymax)]
+                if box[3] <= box[1]:
+                    box[3] += 1
+                if box[2] <= box[0]:
+                    box[2] += 1
                 target.append(box)
 
         return target
@@ -713,21 +702,25 @@ class STAC(pl.LightningModule):
 
         self.teacher.eval()
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
-
+        # dynamic_selected = filter_predictions('dynamic', unlab_pred, class_num=self.hparams['class_num'],
+        #                                                 conf=self.hparams['confidence_threshold'],
+        #                                                 gamma=self.hparams['dt_gamma'])
         # unlab_pred = filter_small(unlab_pred)
         predictions = []
 
         teacher_boxes = []
-        for s in range(len(unlab_pred)):
-            cur_boxes = unlab_pred[s]['boxes']
-            target_boxes = get_target(unlabeled_image_paths[s])
+        teacher_labels = []
+        for pred in unlab_pred:
+            cur_boxes = pred['boxes']
+            cur_labels = pred['labels']
             teacher_boxes.append(cur_boxes)
+            teacher_labels.append(cur_labels)
 
-        # self.phd.eval()
-        # phd_pred = self.phd.forward(unlabeled_x, teacher_boxes=teacher_boxes)
-        # phd_pred = torch.split(phd_pred, [x.shape[0] for x in teacher_boxes])
-        # kept_pred = [i for i in range(len(phd_pred)) if len(phd_pred[i].shape) == 4 and phd_pred[i].shape[0] > 0]
-        # phd_pred = [phd_pred[i] for i in range(len(phd_pred)) if i in kept_pred]
+        self.phd.eval()
+        phd_pred = self.phd.forward(unlabeled_x, teacher_boxes=teacher_boxes)
+        phd_pred = torch.split(phd_pred, [x.shape[0] for x in teacher_boxes])
+        kept_pred = [i for i in range(len(phd_pred)) if len(phd_pred[i].shape) == 4 and phd_pred[i].shape[0] > 0]
+        phd_pred = [phd_pred[i] for i in range(len(phd_pred)) if i in kept_pred]
         # unlab_pred = [unlab_pred[i] for i in range(len(unlab_pred)) if i in kept_pred]
 
 
@@ -739,38 +732,37 @@ class STAC(pl.LightningModule):
 
         non_zero_boxes = []
         target = []
-        predictions = change_prediction_format(unlab_pred, phd_pred)
- 
-        selected_pseudo_labels = filter_predictions(self.hparams['thresholding_method'], 
-                                                    predictions, truth=unlabeled_y,
-                                                    class_num=self.hparams['class_num'],
-                                                    conf=self.hparams['confidence_threshold'],
-                                                    gamma=self.hparams['dt_gamma'],
-                                                    iou_thresh=self.hparams['oracle_iou_threshold'],
-                                                    model_path=self.hparams['oracle_model_path'],
-                                                    experiment_name=self.hparams['experiment_name'])
+        # predictions = change_prediction_format(unlab_pred, phd_pred)
 
-
-        for i, selected_labels_of_image in enumerate(selected_pseudo_labels):
+        for p in range(len(phd_pred)):
             target_boxes = []
             target_labels = []
-            for selected_pl in selected_labels_of_image:
-                target_boxes.append([selected_pl[0], selected_pl[1], selected_pl[2], selected_pl[3]])
-                target_labels.append(selected_pl[4])
-
-            pseudo_boxes_all += len(predictions[i])
-
-            if len(selected_labels_of_image) > 0:
-                non_zero_boxes.append(i)
-
-            # TODO move to the device of the model
-            pseudo_boxes_confident += len(selected_labels_of_image)
+            outputs = filter_predictions(self.hparams['thresholding_method'], 
+                                                        phd_pred[p], truth=unlabeled_y,
+                                                        class_num=self.hparams['class_num'],
+                                                        conf=self.hparams['confidence_threshold'],
+                                                        gamma=self.hparams['dt_gamma'],
+                                                        iou_thresh=self.hparams['oracle_iou_threshold'],
+                                                        model_path=self.hparams['oracle_model_path'],
+                                                        experiment_name=self.hparams['experiment_name'])
+            
+            for i, logits_for_boxes in enumerate(outputs):
+                confidence_class = logits_for_boxes.argmax(dim=-1)
+                if confidence_class > 1:
+                    if teacher_boxes[p][i] != None:
+                        target_boxes.append([teacher_boxes[p][i][0].item(), teacher_boxes[p][i][1].item(), teacher_boxes[p][i][2].item(), teacher_boxes[p][i][3].item()])
+                        target_labels.append(teacher_labels[p][0].item())
+                        non_zero_boxes.append(p)
 
             tensor_boxes = torch.tensor(target_boxes).float().cuda()
             tensor_labels = torch.tensor(target_labels).long().cuda()
 
             target.append({'boxes': tensor_boxes, 'labels': tensor_labels})
+    
+            # pseudo_boxes_all += len(predictions[i])
 
+            # # TODO move to the device of the model
+            # pseudo_boxes_confident += len(selected_labels_of_image)
 
 
         if len(non_zero_boxes):
@@ -790,12 +782,12 @@ class STAC(pl.LightningModule):
         #                                  stage=self.stage)
         #     break
 
-        self.logger.experiment.track(
-            pseudo_boxes_all / len(unlab_pred),
-            name='pseudo_boxes_all', context={'model':self.onTeacher, 'stage':self.stage})
-        self.logger.experiment.track(
-            pseudo_boxes_confident / len(unlab_pred),
-            name='pseudo_boxes_confident', context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(
+        #     pseudo_boxes_all / len(unlab_pred),
+        #     name='pseudo_boxes_all', context={'model':self.onTeacher, 'stage':self.stage})
+        # self.logger.experiment.track(
+        #     pseudo_boxes_confident / len(unlab_pred),
+        #     name='pseudo_boxes_confident', context={'model':self.onTeacher, 'stage':self.stage})
         return unsup_loss
 
     def teacher_training_step(self, batch_list):

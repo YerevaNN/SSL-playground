@@ -16,7 +16,7 @@ import sys
 
 sys.path.insert(1, '/home/hkhachatrian/SSL-playground/consistency_learning_utils/')
 
-from dataloader import model_changed_classifier
+from lightning_model import model_changed_classifier
 
 import pytorch_lightning as pl
 from pytorch_lightning import Trainer
@@ -425,10 +425,13 @@ def inference(pred, model_path, iou_thresh=0.5, experiment_name=""):
     model = Oracle(experiment_name)
     model.cuda()
     model.load_from_path(model_path)
-    old_pred = [(torch.clone(p1), torch.clone(p2)) for p1, p2 in pred]
-    pred_boxes = [p[0] for p in pred]
-    pred_features = [p[1] for p in pred]
-    boxes_per_image, pred = preprocess_predictions(pred_features)
-    output = model(pred)
-    selected_predictions = select_pls(output, boxes_per_image, old_pred, iou_thresh)
-    return selected_predictions
+    model.eval()
+    outputs = model(pred)
+    
+    # old_pred = [(torch.clone(p1), torch.clone(p2)) for p1, p2 in pred]
+    # pred_boxes = [p[0] for p in pred]
+    # pred_features = [p[1] for p in pred]
+    # boxes_per_image, pred = preprocess_predictions(pred_features)
+    # output = model(pred)
+    # selected_predictions = select_pls(output, boxes_per_image, old_pred, iou_thresh)
+    return outputs
