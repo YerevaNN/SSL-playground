@@ -6,7 +6,7 @@ import json
 
 import torch
 # torch.use_deterministic_algorithms(True)  # not in this version?
-from nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
+from .nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
 import torch.optim as optim
 
 from torch import nn
@@ -20,7 +20,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from aim.pytorch_lightning import AimLogger
 
-from dataloader import get_train_test_loaders
+from .dataloader import get_train_test_loaders
 
 def make_target_from_y(y):
     """
@@ -796,14 +796,16 @@ class STAC(pl.LightningModule):
             for batch_pairs in results:
                 for batch in batch_pairs:
                     for image in batch: # (3, 100, 6)
-                        truth = filter_non_zero(image[0], lim=7)
-                        
-                        teacher_pred = filter_non_zero(image[1])
-                        
+                        truth = filter_non_zero(image[0], lim=7)                        
                         student_pred = filter_non_zero(image[2])
-                        
                         self.student_mAP.add(student_pred, truth)
-                        
+        
+        if self.global_rank == 0:
+            for batch_pairs in results:
+                for batch in batch_pairs:
+                    for image in batch: # (3, 100, 6)
+                        truth = filter_non_zero(image[0], lim=7)
+                        teacher_pred = filter_non_zero(image[1])                        
                         self.teacher_mAP.add(teacher_pred, truth)
                         
 
