@@ -5,11 +5,11 @@ import os
 from torch.utils.data import Dataset, DataLoader
 
 from torchvision.transforms import Compose, ToTensor, ToPILImage
-from helpers.cutout import Cutout
+from .helpers.cutout import Cutout
 from PIL import Image
 import random
 
-from helpers import autoaugment
+from .helpers import autoaugment
 # from .helpers.transforms import RandomErasing
 
 class ConcatDataset(Dataset):
@@ -32,7 +32,8 @@ class MyDataset(Dataset):
                  label_root: str = None,
                  end_to_take: str = None,
                  part_to_take: float = 0.,
-                 thresholding: str = None) -> None:
+                 thresholding: str = None,
+                 skip_data_path: str = None) -> None:
         super().__init__()
 
         self.file_path = file_path
@@ -41,9 +42,21 @@ class MyDataset(Dataset):
         self.end_to_take = end_to_take
         self.part_to_take = part_to_take
         self.thresholding = thresholding
+        if skip_data_path is not None:
+            with open(skip_data_path) as f:
+                self.skip_data_lines = f.readlines()
 
         with open(self.file_path) as f:
-            self.file_lines = f.readlines()
+            if skip_data_path is not None:
+                self.file_lines = []
+                for line in f.readlines():
+                    img_path = line.strip()  # new line!
+                    if not img_path in self.skip_data_lines:
+                        self.file_lines.append(line)
+                print('len', len(self.file_lines))
+            else:
+                self.file_lines = f.readlines()
+
             if end_to_take is not None:
                 spliter_placement = part_to_take
                 if end_to_take == 'back':
@@ -113,13 +126,16 @@ def voc_collate_fn(batch):
             result[i].append(item)
     return result
 
-def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file_path, external_val_file_path,
-                           external_val_label_root, label_root, batch_size, num_workers, stage=0,
-                           validation_part=0, pin_memory=True, augmentation=1, thresholding='constant'):
+def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file_path,
+                           external_val_file_path, external_val_label_root, label_root,
+                           batch_size, num_workers, stage=0, validation_part=0,
+                           pin_memory=True, augmentation=1,thresholding='constant',
+                           skip_data_path=None):
 
     train_unlabelled_ds = MyDataset(unlabelled_file_path, target_required=False,
-                                    thresholding=thresholding, label_root=label_root)
-    test_ds = MyDataset(testing_file_path, target_required=False)
+                                    thresholding=thresholding, label_root=label_root,
+                                    skip_data_path=skip_data_path)
+    test_ds = MyDataset(testing_file_path, target_required=False, skip_data_path=skip_data_path)
     if(os.path.isfile(external_val_file_path)):
         external_val_ds = MyDataset(external_val_file_path, target_required=True, label_root=external_val_label_root)
         external_val_ds = TransformedDataset(external_val_ds,
@@ -129,11 +145,12 @@ def get_train_test_loaders(labeled_file_path, unlabelled_file_path, testing_file
                                          pin_memory=pin_memory, collate_fn=voc_collate_fn, shuffle=False)
 
     if stage == 0 or validation_part == 0:
-        train_labelled_ds = MyDataset(labeled_file_path, target_required=True, label_root=label_root)
+        train_labelled_ds = MyDataset(labeled_file_path, target_required=True, label_root=label_root,
+                                      skip_data_path=skip_data_path)
         val_ds = MyDataset(labeled_file_path, target_required=True, label_root=label_root)
     else:
         train_labelled_ds = MyDataset(labeled_file_path, target_required=True, label_root=label_root,
-                                      end_to_take='front', part_to_take=1-validation_part)
+                                      end_to_take='front', part_to_take=1-validation_part, skip_data_path=skip_data_path)
         val_ds = MyDataset(labeled_file_path, target_required=True,
                            label_root=label_root, end_to_take='back', part_to_take=validation_part)
 

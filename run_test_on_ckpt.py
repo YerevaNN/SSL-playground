@@ -9,6 +9,7 @@ from tqdm import tqdm
 import new_loop as loop
 import requests
 from pipeline_utils import *
+import random
 from PIL import Image
 from PIL.ExifTags import TAGS
 from tqdm import tqdm
@@ -20,10 +21,12 @@ from collections import defaultdict
 def main(_):
     FLAGS, resume_session, task = loop.create_default_task()
     phases = ['base', 'adaption']
+    # phases = ['adaption']
     for phase in phases:
         dataset_name = task['session']['Session_Status']['current_dataset']['name']
-        TRAIN_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/train'.format(dataset_name, dataset_name)
-        TEST_DATASET_PATH = '/home/khazhak/lwll_datasets/development/{}/{}_full/test'.format(dataset_name, dataset_name)
+        print("yeeeeeeeeeet", dataset_name)
+        TRAIN_DATASET_PATH = '/lwll/development/{}/{}_full/train'.format(dataset_name, dataset_name)
+        TEST_DATASET_PATH = '/lwll/development/{}/{}_full/test'.format(dataset_name, dataset_name)
         #         TRAIN_DATASET_PATH = '/lwll/development/{}/{}_full/train'.format(dataset_name, dataset_name)
         #         TEST_DATASET_PATH = '/lwll/development/{}/{}_full/test'.format(dataset_name, dataset_name)
 
@@ -125,36 +128,36 @@ def main(_):
             print("We have {} labeled and {} unlabeled images at stage {}".format(
                 len(labeled_filename), len(unlabeled_filename), stage
             ))
+            if phase == 'adaption':
+                print('Writing label files')
+                for index, image_file in enumerate(current_labels_by_image.keys()):
+                    ext = image_file.split('.')[-1]
+                    image_label_file = os.path.join(label_dir, image_file.replace(ext, 'txt'))
+                    image_width, image_height = training_image_metadata[image_file]
 
-            print('Writing label files')
-            for index, image_file in enumerate(current_labels_by_image.keys()):
-                ext = image_file.split('.')[-1]
-                image_label_file = os.path.join(label_dir, image_file.replace(ext, 'txt'))
-                image_width, image_height = training_image_metadata[image_file]
+                    with open(image_label_file, 'w') as label_file:
+                        for label in current_labels_by_image[image_file]:
+                            class_id = label['class']
+                            bbox_abs = [int(float(t.strip())) for t in label['bbox'].split(',')]
+                            xmin, ymin, xmax, ymax = bbox_abs
+                            xmin = max(0, xmin - 1)
+                            xmax = min(image_width - 1, xmax + 1)
+                            ymin = max(0, ymin - 1)
+                            ymax = min(image_height - 1, ymax + 1)
 
-                with open(image_label_file, 'w') as label_file:
-                    for label in current_labels_by_image[image_file]:
-                        class_id = label['class']
-                        bbox_abs = [int(float(t.strip())) for t in label['bbox'].split(',')]
-                        xmin, ymin, xmax, ymax = bbox_abs
-                        xmin = max(0, xmin - 1)
-                        xmax = min(image_width - 1, xmax + 1)
-                        ymin = max(0, ymin - 1)
-                        ymax = min(image_height - 1, ymax + 1)
+                            #                         x_min_rel = float(bbox_abs[0])/image_width
+                            #                         y_min_rel = float(bbox_abs[1])/image_height
+                            #                         x_max_rel = float(bbox_abs[2])/image_width
+                            #                         y_max_rel = float(bbox_abs[3])/image_height
 
-                        #                         x_min_rel = float(bbox_abs[0])/image_width
-                        #                         y_min_rel = float(bbox_abs[1])/image_height
-                        #                         x_max_rel = float(bbox_abs[2])/image_width
-                        #                         y_max_rel = float(bbox_abs[3])/image_height
+                            #                         bbox_width = x_max_rel - x_min_rel
+                            #                         bbox_height = y_max_rel - y_min_rel
+                            #                         x_center_rel = x_min_rel + bbox_width/2
+                            #                         y_center_rel = y_min_rel + bbox_height/2
 
-                        #                         bbox_width = x_max_rel - x_min_rel
-                        #                         bbox_height = y_max_rel - y_min_rel
-                        #                         x_center_rel = x_min_rel + bbox_width/2
-                        #                         y_center_rel = y_min_rel + bbox_height/2
-
-                        #                         new_line = '{} {:.6f} {:.6f} {:.6f} {:.6f}\n'.format(class_id, x_center_rel, y_center_rel, bbox_width, bbox_height)
-                        new_line = '{} {} {} {} {}\n'.format(class_id, xmin, ymin, xmax, ymax)
-                        label_file.write(new_line)
+                            #                         new_line = '{} {:.6f} {:.6f} {:.6f} {:.6f}\n'.format(class_id, x_center_rel, y_center_rel, bbox_width, bbox_height)
+                            new_line = '{} {} {} {} {}\n'.format(class_id, xmin, ymin, xmax, ymax)
+                            label_file.write(new_line)
 
             training_file_path = os.path.join(current_task_dir, 'train_{}.txt'.format(stage))
             with open(training_file_path, 'w') as train_file:
@@ -187,18 +190,19 @@ def main(_):
             with open(test_metadata_path, 'w') as f:
                 json.dump(testing_image_metadata, f)
 
-            output_csv = os.path.join(current_task_dir, 'stage{}.csv'.format(stage))
+            output_csv = os.path.join(current_task_dir, 'debug', 'stage{}.csv'.format(stage))
+            output_csv = os.path.join(current_task_dir, 'debug', 'output.csv')
 
             with open(os.path.join(current_task_dir, 'stage{}.json'.format(stage)), 'w') as f:
                 json.dump(class_id_to_name, f)
 
 
             data_path = './session_data/{}/{}'.format(task['session_token'], phase, stage)
-
-            cmd = 'python run_one_test_on_ckpt.py --output_csv {} --session_id {} --dataset_name {} --phase {} --stage {} --class_num {} --ckpt_path {} --data_path {}'.format(output_csv, task['session_token'], task['session']['Session_Status']['current_dataset']['name'], phase, stage, len(class_id_to_name.keys()), FLAGS.ckpt_path, data_path)
-            print("Starting: {}".format(cmd))
-            os.system(cmd)
-            print("Finished: {}".format(cmd))
+            if phase == 'adaption':
+                cmd = 'python run_one_test_on_ckpt.py --output_csv {} --session_id {} --dataset_name {} --phase {} --stage {} --class_num {} --ckpt_path {} --data_path {}'.format(output_csv, task['session_token'], task['session']['Session_Status']['current_dataset']['name'], phase, stage, len(class_id_to_name.keys()), FLAGS.ckpt_path, data_path)
+                print("Starting: {}".format(cmd))
+                os.system(cmd)
+                print("Finished: {}".format(cmd))
 
             empty_submission = {
                 'id':{

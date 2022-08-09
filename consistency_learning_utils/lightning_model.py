@@ -2,11 +2,14 @@ from argparse import Namespace
 import os
 import csv
 import numpy as np
+from .nets.oracle.convnet import Oracle
 import json
 
 import torch
-from nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
+from .nets.detection.faster_rcnn import fasterrcnn_resnet50_fpn
 import torch.optim as optim
+from PIL import Image
+import torchvision.transforms as T
 
 from torch import nn
 from collections import OrderedDict
@@ -19,66 +22,9 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from aim.pytorch_lightning import AimLogger
 
-from dataloader import get_train_test_loaders
+from .dataloader import get_train_test_loaders
 import zarr
-# from nets.oracle.convnet import inference
-
-def make_target_from_y(y):
-    """
-    Converts a list of M objects like
-        [{"label":1, "bndbox":{"xmin":1,"ymin":2,"xmax":3,"ymax":4}}]
-    to an object of lists like
-        {"boxes": cuda tensor (M,4), "labels": cuda tensor (M)}
-    """
-    target = []
-    for i in range(len(y)):
-        target_boxes = []
-        target_labels = []
-        for box in y[i]:
-            xmin = int(box['bndbox']['xmin'])
-            xmax = int(box['bndbox']['xmax'])
-            ymin = int(box['bndbox']['ymin'])
-            ymax = int(box['bndbox']['ymax'])
-            label = int(box['label'])
-            target_boxes.append([xmin, ymin, xmax, ymax])
-            target_labels.append(label)
-        tensor_boxes = torch.cuda.FloatTensor(target_boxes, device='cuda')
-        tensor_labels = torch.cuda.LongTensor(target_labels, device='cuda')
-        target.append({'boxes': tensor_boxes, 'labels': tensor_labels})
-    return target
-
-
-def bb_intersection_over_union(boxA, boxB):
-    xA = max(boxA[0], boxB[0])
-    yA = max(boxA[1], boxB[1])
-    xB = min(boxA[2], boxB[2])
-    yB = min(boxA[3], boxB[3])
-    interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
-    boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
-    boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
-    iou = interArea / float(boxAArea + boxBArea - interArea)
-    return iou
-
-
-def break_batch(batch):
-    x, y, paths = [], [], []
-    for img in batch:
-        x.append(img[0])
-        y.append(img[1])
-        paths.append(img[2])
-    return x, y, paths
-
-
-class SkipConnection(nn.Module):
-
-    def __init__(self, module):
-        super().__init__()
-        self.module = module
-
-    def forward(self, x):
-        z = self.module(x)
-        return torch.cat((x, z), dim=-1)
-
+from .nets.oracle.convnet import inference
 
 def model_changed_classifier(reuse_classifier=False, initialize=False, class_num=20, gamma=1, box_score_thresh=0.05):
     """
@@ -116,12 +62,12 @@ def model_changed_classifier(reuse_classifier=False, initialize=False, class_num
 
         new_cls_score = nn.Sequential(
             old_cls_score,  # 1024 -> 91
-            nn.Linear(in_features=91, out_features=1, bias=True)
+            nn.Linear(in_features=91, out_features=class_num+1, bias=True)
         )
 
         new_bbox_pred = nn.Sequential(
             old_bbox_pred,
-            nn.Linear(in_features=364, out_features=4*(1), bias=True)
+            nn.Linear(in_features=364, out_features=4*(class_num+1), bias=True)
         )
     elif reuse_classifier == 'concatenate':
         old_cls_score = SkipConnection(model.roi_heads.box_predictor.cls_score)
@@ -145,37 +91,125 @@ def model_changed_classifier(reuse_classifier=False, initialize=False, class_num
     return model
 
 
+def make_target_from_y(y):
+    """
+    Converts a list of M objects like
+        [{"label":1, "bndbox":{"xmin":1,"ymin":2,"xmax":3,"ymax":4}}]
+    to an object of lists like
+        {"boxes": cuda tensor (M,4), "labels": cuda tensor (M)}
+    """
+    target = []
+    for i in range(len(y)):
+        target_boxes = []
+        target_labels = []
+        for box in y[i]:
+            xmin = int(box['bndbox']['xmin'])
+            xmax = int(box['bndbox']['xmax'])
+            ymin = int(box['bndbox']['ymin'])
+            ymax = int(box['bndbox']['ymax'])
+            label = int(box['label'])
+            target_boxes.append([xmin, ymin, xmax, ymax])
+            target_labels.append(label)
+        tensor_boxes = torch.cuda.FloatTensor(target_boxes, device='cuda')
+        tensor_labels = torch.cuda.LongTensor(target_labels, device='cuda')
+        target.append({'boxes': tensor_boxes, 'labels': tensor_labels})
+    return target
+
+
+def bb_intersection_over_union(boxA, boxB):
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+    interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+    boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+    boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+    iou = interArea / float(boxAArea + boxBArea - interArea)
+    return iou
+
+def get_target(label_root, image_name):
+        image_name = '.'.join(image_name.split('.')[:-1]) + '.txt'  # replace .jpg (or whatever) to .txt
+        label_path = os.path.join(label_root, image_name)
+        target = []
+        with open(label_path) as f:
+            for line in f:
+                line_arr = [float(t) for t in line.split(' ')]
+                label, xmin, ymin, xmax, ymax = line_arr
+                box = {}
+                box['label'] = int(label)
+                box['bndbox'] = {}
+                box['bndbox']['xmin'] = int(xmin)
+                box['bndbox']['ymin'] = int(ymin)
+                box['bndbox']['xmax'] = int(xmax)
+                box['bndbox']['ymax'] = int(ymax)
+                if box['bndbox']['ymax'] <= box['bndbox']['ymin']:
+                    box['bndbox']['ymax'] += 1
+                if box['bndbox']['xmax'] <= box['bndbox']['xmin']:
+                    box['bndbox']['xmax'] += 1
+                target.append(box)
+        return target
+
+def break_batch(batch):
+    x, y, paths = [], [], []
+    for img in batch:
+        x.append(img[0])
+        y.append(img[1])
+        paths.append(img[2])
+    return x, y, paths
+
+
+class SkipConnection(nn.Module):
+
+    def __init__(self, module):
+        super().__init__()
+        self.module = module
+
+    def forward(self, x):
+        z = self.module(x)
+        return torch.cat((x, z), dim=-1)
+
+
 def constant_thresholding(pred, conf):
-    selected_pseudo_labels = []
-
-    for p in pred:
-        indices = torch.where(torch.transpose(p, 0, 1)[5] >= conf)
-        p = p[indices]
-        selected_pseudo_labels.append(p)
-
-    return selected_pseudo_labels
+    features, boxes, scores, labels = pred
+    kept_boxes = []
+    kept_scores = []
+    kept_labels = []
+    for box, score, label in zip(boxes, scores, labels):
+        keep_indices = torch.where(score >= conf)
+        kept_boxes.append(box[keep_indices])
+        kept_scores.append(score[keep_indices])
+        kept_labels.append(label[keep_indices])
+    return (kept_boxes, kept_scores, kept_labels)
 
 
 def dynamic_thresholding(pred, class_num, conf, gamma):
-    selected_pseudo_labels = []
-    for i, im_pred in enumerate(pred):
-        classes = range(1, class_num+1)
+    _, boxes, scores, labels = pred
+    kept_boxes = []
+    kept_scores = []
+    kept_labels = []
+    for box, score, label in zip(boxes, scores, labels):
+        keep_indices = []
 
+        classes = range(1, class_num+1)
         class_boxes = {i: [] for i in classes}
-        for p in im_pred:
-            class_boxes[int(p[4])].append(p[5])
-            
+        for l in range(len(label)):
+            class_boxes[int(label[l].item())].append(score[l].item())
+        
+
         scores_sums = {cl : sum(class_boxes[cl]) for cl in classes}
         scaled_threshold = np.power(list(scores_sums.values()), gamma)
         scaled_threshold = scaled_threshold / scaled_threshold.max() * conf
 
-        labels = im_pred[:, 4].int() - 1
-        thresholds = scaled_threshold[labels]
-        thresholds = torch.from_numpy(thresholds)
-        selected_labels_of_image = im_pred[:,5] >= thresholds
-        selected_pseudo_labels.append(im_pred[selected_labels_of_image])
-        
-    return selected_pseudo_labels
+        box_labels = (label.int() - 1).cpu()
+        thresholds = [scaled_threshold[x] for x in box_labels]
+        # thresholds = scaled_threshold[box_labels]
+        thresholds = torch.from_numpy(np.array(thresholds))
+        keep_indices = score.cpu() >= thresholds
+        kept_boxes.append(box[keep_indices])
+        kept_scores.append(score[keep_indices])
+        kept_labels.append(label[keep_indices])
+
+    return (kept_boxes, kept_scores, kept_labels)
 
 
 def oracle(pred, truth, IOU_threshold=0.5):
@@ -231,24 +265,20 @@ def oracle2(pred, truth, IOU_threshold=0.7, conf_threshold=-1.0):
 
 
 def change_prediction_format(unlab_pred, phd_pred):
-    new_pred = []
+    all_features = []
+    all_boxes = []
+    all_scores = []
+    all_labels = []
     for i, sample_pred in enumerate(unlab_pred):
-        boxes = sample_pred['boxes'].cpu()
-        labels = sample_pred['labels'].cpu().unsqueeze(1)
-        labels = labels.repeat(1, 7)
-        labels = labels.unsqueeze(2)
-        labels = labels.repeat(1, 1, 7)
-        labels = labels.unsqueeze(1)
-        scores = sample_pred['scores'].cpu().unsqueeze(1)
-        scores = scores.repeat(1, 7)
-        scores = scores.unsqueeze(2)
-        scores = scores.repeat(1, 1, 7)
-        scores = scores.unsqueeze(1)
-        features = phd_pred.cpu()
-        features = torch.cat((labels, features), dim=1)
-        features = torch.cat((scores, features), dim=1)
-        new_pred.append(features)
-    return new_pred
+        boxes = sample_pred['boxes']
+        all_boxes.append(boxes)
+        labels = sample_pred['labels']
+        all_labels.append(labels)
+        scores = sample_pred['scores']
+        all_scores.append(scores)
+        features = phd_pred[i]
+        all_features.append(features)
+    return (all_features, all_boxes, all_scores, all_labels)
 
 
 def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=None, iou_thresh=None, model_path=None):
@@ -273,11 +303,24 @@ def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=
                                              conf_threshold=conf)
         else:
             raise NotImplementedError
-    # elif type == 'convnet':
-    #     if iou_thresh is not None and model_path is not None:
-    #         selected_pseudo_labels = inference(pred, model_path, iou_thresh=iou_thresh)
-    #     else:
-    #         raise NotImplementedError
+    elif type == 'convnet':
+        if model_path is not None:
+            selected_pseudo_labels = inference(pred, model_path, iou_thresh=iou_thresh)
+        else:
+            raise NotImplementedError
+    elif type == 'convnet_and_constant':
+        if iou_thresh is not None and model_path is not None:
+            old_selected_pseudo_labels = inference(pred, model_path, iou_thresh=iou_thresh)
+            old_boxes, old_scores, old_labels = old_selected_pseudo_labels
+            boxes, scores, labels = [], [], []
+            for box, score, label in zip(old_boxes, old_scores, old_labels):
+                indices = torch.where(score >= conf)
+                boxes.append(box[indices])
+                scores.append(score[indices])
+                labels.append(label[indices])
+            selected_pseudo_labels = (boxes, scores, labels)
+        else:
+            raise NotImplementedError
     else:
         raise NotImplementedError
     return selected_pseudo_labels
@@ -335,7 +378,8 @@ class STAC(pl.LightningModule):
         ))
         self.feature_folder = os.path.join('.', self.hparams['version_name'], 'features')
         os.makedirs(self.feature_folder, exist_ok=True)
-        self.zarr_file = zarr.open(os.path.join(self.feature_folder, 'features.zarr'), mode='w')
+        os.makedirs(version_folder, exist_ok=True)
+        # self.zarr_file = zarr.open(os.path.join(self.feature_folder, 'features.zarr'), mode='w')
 
         self.teacher_init = 'full' if (self.hparams['teacher_init_path'] and (not self.hparams['skip_burn_in'])) else \
             self.hparams['initialization']
@@ -360,6 +404,10 @@ class STAC(pl.LightningModule):
             class_num=self.hparams['class_num'],
             gamma=self.hparams['gamma'],
             box_score_thresh=self.hparams['box_score_thresh'])
+        
+        self.teacher.to('cuda')
+        self.student.to('cuda')
+        self.phd.to('cuda')
 
         self.aim_logger = AimLogger(
             experiment=self.hparams['version_name']
@@ -376,12 +424,100 @@ class STAC(pl.LightningModule):
 
         self.custom_validation_start()
 
+    def make_feature_data_file(self, label_root, experiment_name):
+        feature_data_path = "/home/hkhachatrian/SSL-playground/consistency_learning_utils/nets/oracle/feature_data/" + experiment_name + ".txt"
+        if os.path.exists(feature_data_path):
+            os.remove(feature_data_path)
+
+        with open(os.path.join(self.hparams['phase_folder'], 'train_' + str(self.stage) + '.txt')) as images_path:
+            for im_path in images_path:
+                im_path = im_path[:-1]
+                with open(im_path, 'rb') as f:
+                    image = Image.open(f)
+                    image = image.convert("RGB")
+                    width, height = image.size
+                    image = np.array(image)
+                if len(image.shape) == 2:
+                    image = np.repeat(image[:, :, np.newaxis], 3, axis=2)
+                transform = T.Compose([T.ToTensor()])
+                image = transform(image)
+                image = torch.unsqueeze(image, 0)
+                image = image.cuda()
+                self.teacher.cuda()
+                pred_teacher = self.teacher.forward(image)
+                teacher_boxes = pred_teacher[0]['boxes']
+                teacher_labels = pred_teacher[0]['labels']
+                teacher_scores = pred_teacher[0]['scores']
+                target_boxes = get_target(label_root, im_path.split('/')[-1])
+                for i in range(len(teacher_boxes)):
+                    teacher_max_iou = 0
+                    t_xmin = teacher_boxes[i][0].item()
+                    t_ymin = teacher_boxes[i][1].item()
+                    t_xmax = teacher_boxes[i][2].item()
+                    t_ymax = teacher_boxes[i][3].item()
+                    t_label = teacher_labels[i].item()
+                    t_score = teacher_scores[i].item()
+                    for gt in target_boxes:
+                        xmin = gt['bndbox']['xmin']
+                        ymin = gt['bndbox']['ymin']
+                        xmax = gt['bndbox']['xmax']
+                        ymax = gt['bndbox']['ymax']
+                        iou = bb_intersection_over_union([t_xmin, t_ymin, t_xmax, t_ymax], [xmin, ymin, xmax, ymax])
+                        if iou > teacher_max_iou:
+                            teacher_max_iou = iou
+                    str_teacher = im_path + ' ' + '[' + str(t_xmin) + ',' + str(t_ymin) + ',' + str(t_xmax) + ',' + str(t_ymax) + '] ' + str(teacher_max_iou)+ ' ' + str(t_score) + ' ' + str(t_label) + '\n'
+                    f1 = open(feature_data_path, "a+")
+                    f1.writelines(str_teacher)
+                    f1.close()
+                
+
+        return feature_data_path
+
+    def train_cnn_on_labeled(self):
+        label_root = os.path.join(self.hparams['phase_folder'], 'labels')
+        experiment_name = self.hparams['version_name']
+
+
+        feature_data_path = self.make_feature_data_file(label_root, experiment_name)
+        print("feature_data_path: ", feature_data_path)
+
+
+
+        class_num = self.hparams['class_num']
+        box_score_thresh = 0.005
+        lr = 0.001
+        epochs_per_stage = [
+            5,
+            4,
+            3,
+            2,
+            1,
+            1,
+            1,
+            1,
+            1
+        ]
+        train_epochs = epochs_per_stage[self.stage]
+
+        model = Oracle(experiment_name, lr = lr, class_num=class_num, train_epochs=train_epochs)
+
+        if self.hparams["oracle_pretrained"]:
+            checkpoint_path = self.hparams["oracle_model_path_init"]
+            model.load_from_path(checkpoint_path)
+
+        split = 0.9
+        batch_size = 12
+        model.set_datasets(feature_data_path, label_root, split, batch_size, class_num, box_score_thresh)
+        model.fit_model()
+        
+        new_cnn_path = os.getcwd() + "/checkpoints/{}/".format(experiment_name) + 'our_best.ckpt'
+        return new_cnn_path
 
     def custom_validation_start(self):
         self.student_mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
-                                                         num_classes=self.hparams['class_num'])
+                                                         num_classes=self.hparams['class_num'] + 1)
         self.teacher_mAP = MetricBuilder.build_evaluation_metric("map_2d", async_mode=True,
-                                                         num_classes=self.hparams['class_num'])
+                                                         num_classes=self.hparams['class_num'] + 1)
         self.prediction_cache = {}
         self.validation_student_boxes = 0
         self.validation_teacher_boxes = 0
@@ -416,6 +552,10 @@ class STAC(pl.LightningModule):
     def copy_student_from_current_teacher(self):
         actual_dict = self.teacher.state_dict()
         self.student.load_state_dict(actual_dict)
+    
+    def copy_phd_from_current_teacher(self):
+        actual_dict = self.teacher.state_dict()
+        self.phd.load_state_dict(actual_dict)
 
     def load_checkpoint_teacher(self, checkpoint_path, skip_last_layer=False):
         checkpoint = torch.load(checkpoint_path)
@@ -477,7 +617,7 @@ class STAC(pl.LightningModule):
         #     ))
 
     def set_datasets(self, labeled_file_path, unlabeled_file_path, testing_file_path,
-                     external_val_file_path, external_val_label_root, label_root):
+                     external_val_file_path, external_val_label_root, label_root, skip_data_path=None):
 
         loaders = get_train_test_loaders(labeled_file_path,
                                          unlabeled_file_path,
@@ -490,7 +630,8 @@ class STAC(pl.LightningModule):
                                          stage=self.stage,
                                          validation_part=self.validation_part,
                                          augmentation=self.hparams['augmentation'],
-                                         thresholding=self.hparams['thresholding_method'])
+                                         thresholding=self.hparams['thresholding_method'],
+                                         skip_data_path=skip_data_path)
         if (os.path.isfile(external_val_file_path)):
             self.train_loader, self.test_loader, self.val_loader = loaders
         else:
@@ -501,7 +642,7 @@ class STAC(pl.LightningModule):
 
     def make_teacher_trainer(self):
         self.t_checkpoint_callback = ModelCheckpoint(
-            monitor=None,  # 'val_loss',
+            # monitor='val_loss',
             dirpath=self.save_dir_name_teacher,
             filename='{epoch}',
             verbose=True,
@@ -520,6 +661,7 @@ class STAC(pl.LightningModule):
             max_steps=self.hparams['total_steps_teacher'],
             check_val_every_n_epoch=self.check_val_epochs,
             deterministic=True,
+            accumulate_grad_batches=8
         )
         self.teacher_test_trainer = Trainer(
             gpus=1, checkpoint_callback=True,  # what is this?
@@ -532,12 +674,13 @@ class STAC(pl.LightningModule):
             max_steps=self.hparams['total_steps_teacher'],
             check_val_every_n_epoch=self.check_val_epochs,
             deterministic=True,
+            accumulate_grad_batches=8
         )
 
 
     def make_student_trainer(self):
         checkpoint_callback = ModelCheckpoint(
-            monitor=None,  # 'val_loss',
+            monitor='val_loss',
             dirpath=self.save_dir_name_student,
             filename='{epoch}',
             verbose=True,
@@ -556,7 +699,8 @@ class STAC(pl.LightningModule):
             min_steps=self.hparams['total_steps_student'],
             max_steps=self.hparams['total_steps_student'],
             check_val_every_n_epoch=self.check_val_epochs,
-            deterministic=True
+            deterministic=True,
+            accumulate_grad_batches=8
         )
         self.student_test_trainer = Trainer(
             gpus=1, checkpoint_callback=True,  # what is this?
@@ -568,7 +712,8 @@ class STAC(pl.LightningModule):
             min_steps=self.hparams['total_steps_student'],
             max_steps=self.hparams['total_steps_student'],
             check_val_every_n_epoch=self.check_val_epochs,
-            deterministic=True
+            deterministic=True,
+            accumulate_grad_batches=8
         )
 
     def student_forward(self, x, image_paths):
@@ -576,6 +721,9 @@ class STAC(pl.LightningModule):
 
     def teacher_forward(self, x, image_paths):
         return self.teacher.forward(x, image_paths=image_paths)
+
+    def phd_forward(self, x, image_paths):
+        return self.phd.forward(x, image_paths=image_paths)
 
     def forward(self, x, image_paths):
         if self.onTeacher:
@@ -681,23 +829,37 @@ class STAC(pl.LightningModule):
             if self.hparams['thresholding_method'].startswith('oracle'):
                 unlabeled_y.append(unlab[1])
             unlabeled_image_paths.append(unlab[2])
-            unlabeled_ground_truth_boxes.append(self.get_boxes(unlab[2]))
+            # unlabeled_ground_truth_boxes.append(self.get_boxes(unlab[2]))
             augmented_x.append(augment[0])
             augmented_image_paths.append(augment[2])
 
         self.teacher.eval()
         unlab_pred = self.teacher_forward(unlabeled_x, unlabeled_image_paths)
+        pseudo_boxes_all_per_class = {i: 0 for i in range(self.hparams['class_num'])}
+        pseudo_boxes_confindent_per_class = {i: 0 for i in range(self.hparams['class_num'])}
+
+
+        # for sample_pred in unlab_pred:
+        #     keep_indices = torch.where(sample_pred['scores'] >= self.hparams['oracle_iou_threshold'])
+        #     # if keep_indices[0].shape[0] == 0 and sample_pred['boxes'].shape[0] > 0:
+        #     #     keep_indices = torch.cat((keep_indices[0], torch.tensor([0], device='cuda')), 0)
+        #     sample_pred['boxes'] = sample_pred['boxes'][keep_indices]
+        #     sample_pred['labels'] = sample_pred['labels'][keep_indices]
+        #     sample_pred['scores'] = sample_pred['scores'][keep_indices]
         teacher_boxes = []
         for sample_pred in unlab_pred:
+            cur_labels = sample_pred['labels']
+            for l in range(len(cur_labels)):
+                pseudo_boxes_all_per_class[cur_labels[l].item() - 1] += 1
             cur_boxes = sample_pred['boxes']
             teacher_boxes.append(cur_boxes)
-        gt_boxes = []
-        for gt in unlabeled_ground_truth_boxes:
-            gtb = gt['boxes']
-            gt_boxes.append(gtb)
+        # gt_boxes = []
+        # for gt in unlabeled_ground_truth_boxes:
+        #     gtb = gt['boxes']
+        #     gt_boxes.append(gtb)
         self.phd.eval()
-        phd_pred = self.phd.forward(unlabeled_x, teacher_boxes=gt_boxes)
-        phd_pred = torch.split(phd_pred, [x.shape[0] for x in gt_boxes])
+        phd_pred = self.phd.forward(unlabeled_x, teacher_boxes=teacher_boxes)
+        phd_pred = torch.split(phd_pred, [x.shape[0] for x in teacher_boxes])
 
         # save_image(unlabeled_x[0], 'unlabeled.png')
         # save_image(augmented_x[0], 'augmented.png')
@@ -707,20 +869,19 @@ class STAC(pl.LightningModule):
 
         non_zero_boxes = []
         target = []
-        predictions = change_prediction_format(unlabeled_ground_truth_boxes, phd_pred)
+        predictions = change_prediction_format(unlab_pred, phd_pred)
         
-        for i in range(len(predictions)):
-            img_name = unlabeled_image_paths[i].split('/')[-1].split('.')[0]
-            for j, p in enumerate(predictions[i][1]):
-                bbox = [float(k) for k in predictions[i][0][j]]
-                feat = p.cpu().detach().numpy().tolist()
-                bbox = np.array(bbox, dtype='float32')
-                feat = np.array(feat, dtype='float32')
-                cur_box_name = img_name + '_' + str(j)
-                self.zarr_file[cur_box_name + '_bbox'] = bbox
-                self.zarr_file[cur_box_name + '_feat'] = feat
+        # for i in range(len(predictions)):
+        #     img_name = unlabeled_image_paths[i].split('/')[-1].split('.')[0]
+        #     for j, p in enumerate(predictions[i][1]):
+        #         bbox = [float(k) for k in predictions[i][0][j]]
+        #         feat = p.cpu().detach().numpy().tolist()
+        #         bbox = np.array(bbox, dtype='float32')
+        #         feat = np.array(feat, dtype='float32')
+        #         cur_box_name = img_name + '_' + str(j)
+        #         self.zarr_file[cur_box_name + '_bbox'] = bbox
+        #         self.zarr_file[cur_box_name + '_feat'] = feat
 
-        return 0 * augmented_x[0].new(1).squeeze()
 
         selected_pseudo_labels = filter_predictions(self.hparams['thresholding_method'], 
                                                     predictions, truth=unlabeled_y,
@@ -730,27 +891,43 @@ class STAC(pl.LightningModule):
                                                     iou_thresh=self.hparams['oracle_iou_threshold'],
                                                     model_path=self.hparams['oracle_model_path'])
 
+        # selected_pseudo_labels_dynamic = filter_predictions('dynamic', 
+        #                                             predictions, truth=unlabeled_y,
+        #                                             class_num=self.hparams['class_num'],
+        #                                             conf=self.hparams['confidence_threshold'],
+        #                                             gamma=self.hparams['dt_gamma'],
+        #                                             iou_thresh=self.hparams['oracle_iou_threshold'],
+        #                                             model_path=self.hparams['oracle_model_path'])
 
-        for i, selected_labels_of_image in enumerate(selected_pseudo_labels):
-            target_boxes = []
-            target_labels = []
-            for selected_pl in selected_labels_of_image:
-                target_boxes.append([selected_pl[0], selected_pl[1], selected_pl[2], selected_pl[3]])
-                target_labels.append(selected_pl[4])
 
-            pseudo_boxes_all += predictions[i].shape[0]
 
-            if selected_labels_of_image.shape[0] > 0:
+        boxes, scores, labels = selected_pseudo_labels
+        # boxes_dynamic, scores_dynamic, labels_dynamic = selected_pseudo_labels_dynamic
+
+        # boxes = boxes + list(set(boxes_dynamic) - set(boxes))
+        # scores = scores + list(set(scores_dynamic) - set(scores))
+        # labels = labels + list(set(labels_dynamic) - set(labels))
+
+
+        for i in range(len(boxes)):
+            target_boxes = boxes[i]
+            target_labels = labels[i]
+
+            pseudo_boxes_all += predictions[0][i].shape[0]
+
+            if target_boxes.shape[0] > 0:
                 non_zero_boxes.append(i)
+            
+            for lc in range(len(target_labels)):
+                pseudo_boxes_confindent_per_class[target_labels[lc].item() - 1] += 1
 
             # TODO move to the device of the model
-            pseudo_boxes_confident += selected_labels_of_image.shape[0]
+            pseudo_boxes_confident += target_boxes.shape[0]
 
             tensor_boxes = torch.tensor(target_boxes).float().cuda()
             tensor_labels = torch.tensor(target_labels).long().cuda()
 
             target.append({'boxes': tensor_boxes, 'labels': tensor_labels})
-
 
 
         if len(non_zero_boxes):
@@ -769,7 +946,13 @@ class STAC(pl.LightningModule):
         #                                  name='teacher_weight', model=self.onTeacher,
         #                                  stage=self.stage)
         #     break
-
+        for cl in range(self.hparams['class_num']):
+            self.logger.experiment.track(
+                pseudo_boxes_all_per_class[cl] / len(unlab_pred),
+                name='pseudo_boxes_all_{}'.format(cl), context={'model':self.onTeacher, 'stage':self.stage})
+            self.logger.experiment.track(
+                pseudo_boxes_confindent_per_class[cl] / len(unlab_pred),
+                name='pseudo_boxes_confident_{}'.format(cl), context={'model':self.onTeacher, 'stage':self.stage})
         self.logger.experiment.track(
             pseudo_boxes_all / len(unlab_pred),
             name='pseudo_boxes_all', context={'model':self.onTeacher, 'stage':self.stage})
@@ -905,8 +1088,10 @@ class STAC(pl.LightningModule):
             # self.student_mAP.add(np.array(student_pred_for_mAP), np.array(truth_for_mAP))
             # self.teacher_mAP.add(np.array(teacher_pred_for_mAP), np.array(truth_for_mAP))
             output_tensor[i][0][:min(200,len(truth_for_mAP))] = torch.tensor(np.array(truth_for_mAP)[:200])
-            output_tensor[i][1][:len(teacher_pred_for_mAP),:6] = torch.tensor(np.array(teacher_pred_for_mAP))
-            output_tensor[i][2][:len(student_pred_for_mAP),:6] = torch.tensor(np.array(student_pred_for_mAP))
+            if len(teacher_pred_for_mAP):
+                output_tensor[i][1][:len(teacher_pred_for_mAP),:6] = torch.tensor(np.array(teacher_pred_for_mAP))
+            if len(student_pred_for_mAP):
+                output_tensor[i][2][:len(student_pred_for_mAP),:6] = torch.tensor(np.array(student_pred_for_mAP))
 
             self.validation_teacher_boxes += len(teacher_pred_for_mAP)
             self.validation_student_boxes += len(student_pred_for_mAP)
@@ -935,9 +1120,15 @@ class STAC(pl.LightningModule):
                 for batch in batch_pairs:
                     for image in batch: # (3, 100, 6)
                         truth = filter_non_zero(image[0], lim=7)
-                        teacher_pred = filter_non_zero(image[1])
                         student_pred = filter_non_zero(image[2])
                         self.student_mAP.add(student_pred, truth)
+        val_loss = 0
+        if self.global_rank == 0:
+            for batch_pairs in results:
+                for batch in batch_pairs:
+                    for image in batch: # (3, 100, 6)
+                        truth = filter_non_zero(image[0], lim=7)
+                        teacher_pred = filter_non_zero(image[1])
                         self.teacher_mAP.add(teacher_pred, truth)
 
             # mAP1 = self.mAP.value(iou_thresholds=0.5, recall_thresholds=np.arange(0., 1.1, 0.1))['mAP']
@@ -949,19 +1140,35 @@ class STAC(pl.LightningModule):
             self.logger.experiment.track(float(student_mAP2), name='map2', context={'model':False, 'stage':self.stage})
             self.logger.experiment.track(float(student_mAP3['mAP']), name='mAP5095', context={'model':False, 'stage':self.stage})
             for iou in ious:
+                ap = float(np.mean([x['ap'] for cat, x in student_mAP3[iou].items() if cat != 0]))
                 self.logger.experiment.track(
-                    float(np.mean([x['ap'] for x in student_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
+                    ap, name='AP{:.0f}'.format(iou*100),
                     context={'model':False, 'stage':self.stage})
+                if iou != 0.5:
+                    continue
+                for cat in range(1, self.hparams['class_num']+1):
+                    self.logger.experiment.track(
+                        float(student_mAP3[iou][cat]['ap']), name='AP{:.0f}_{}'.format(iou * 100, cat),
+                        context={'model':False, 'stage':self.stage})
+            
             teacher_mAP2 = self.teacher_mAP.value(iou_thresholds=0.5)['mAP']
             teacher_mAP3 = self.teacher_mAP.value(iou_thresholds=ious,
                                   recall_thresholds=np.arange(0., 1.01, 0.01), mpolicy='soft')
 
             self.logger.experiment.track(float(teacher_mAP2), name='map2', context={'model':True, 'stage':self.stage})
             self.logger.experiment.track(float(teacher_mAP3['mAP']), name='mAP5095', context={'model':True, 'stage':self.stage})
+            
             for iou in ious:
+                ap = float(np.mean([x['ap'] for cat, x in teacher_mAP3[iou].items() if cat != 0]))
                 self.logger.experiment.track(
-                    float(np.mean([x['ap'] for x in teacher_mAP3[iou].values()])), name='AP{:.0f}'.format(iou*100),
+                    ap, name='AP{:.0f}'.format(iou*100),
                     context={'model':True, 'stage':self.stage})
+                if iou != 0.5:
+                    continue
+                for cat in range(1, self.hparams['class_num']+1):
+                    self.logger.experiment.track(
+                        float(teacher_mAP3[iou][cat]['ap']), name='AP{:.0f}_{}'.format(iou * 100, cat),
+                        context={'model':True, 'stage':self.stage}) 
 
             # val_loss as a surrogate for mAP
             val_loss = 1 - student_mAP2
@@ -977,7 +1184,8 @@ class STAC(pl.LightningModule):
                 self.best_student_val = min(self.best_student_val, val_loss)
             self.best_val_loss = min(self.best_val_loss, val_loss)
 
-        self.store_predictions()
+
+        # self.store_predictions()
 
         # TODO: two metrics below are from one gpu only!
         self.logger.experiment.track(
@@ -989,8 +1197,11 @@ class STAC(pl.LightningModule):
 
         self.custom_validation_start()
 
+        print('val_loss', val_loss)
+        val_loss = torch.tensor(val_loss)
+        print('val_loss', val_loss)
         return {
-            'val_loss': -self.validation_counter
+            'val_loss': val_loss
         }
 
     def store_predictions(self):
@@ -1035,46 +1246,46 @@ class STAC(pl.LightningModule):
         y_hat = y_hat.argmax(dim=-1)
         return torch.sum(y == y_hat).item() / len(y)
 
-    def optimizer_step(self, epoch: int = None, batch_idx: int = None, optimizer = None,
-                       optimizer_idx: int = None, optimizer_closure = None, on_tpu: bool = None,
-                       using_native_amp: bool = None, using_lbfgs: bool = None):
-        lr = self.hparams['learning_rate']
-        lr_schedule = self.hparams['lr_schedule']
-        drop_steps = self.hparams['lr_drop_steps']
-        drop_rate = self.hparams['lr_drop_rate']
-        warmup_steps = self.hparams['warmup_steps']
-        if not self.onTeacher:
-            lr = self.hparams['student_learning_rate']
-            lr_schedule = self.hparams['student_lr_schedule']
-            drop_steps = self.hparams['student_lr_drop_steps']
-            drop_rate = self.hparams['student_lr_drop_rate']
-            warmup_steps = self.hparams['student_warmup_steps']
+    # def optimizer_step(self, epoch: int = None, batch_idx: int = None, optimizer = None,
+    #                    optimizer_idx: int = None, optimizer_closure = None, on_tpu: bool = None,
+    #                    using_native_amp: bool = None, using_lbfgs: bool = None):
+    #     lr = self.hparams['learning_rate']
+    #     lr_schedule = self.hparams['lr_schedule']
+    #     drop_steps = self.hparams['lr_drop_steps']
+    #     drop_rate = self.hparams['lr_drop_rate']
+    #     warmup_steps = self.hparams['warmup_steps']
+    #     if not self.onTeacher:
+    #         lr = self.hparams['student_learning_rate']
+    #         lr_schedule = self.hparams['student_lr_schedule']
+    #         drop_steps = self.hparams['student_lr_drop_steps']
+    #         drop_rate = self.hparams['student_lr_drop_rate']
+    #         warmup_steps = self.hparams['student_warmup_steps']
 
-        if lr_schedule == 'constant':
-            curLR = lr
-        elif lr_schedule == 'warmup' or lr_schedule == 'warmupWithDrop':
-            if self.trainer.global_step < warmup_steps:
-                curLR = lr * min(1., float(self.trainer.global_step + 1) / warmup_steps)
-            elif self.trainer.global_step < drop_steps or lr_schedule != 'warmupWithDrop':
-                curLR = lr
-            else:
-                curLR = lr / drop_rate
-        elif lr_schedule == 'cyclic':
-            curLR = self.scheduler.get_last_lr()[0]
+    #     if lr_schedule == 'constant':
+    #         curLR = lr
+    #     elif lr_schedule == 'warmup' or lr_schedule == 'warmupWithDrop':
+    #         if self.trainer.global_step < warmup_steps:
+    #             curLR = lr * min(1., float(self.trainer.global_step + 1) / warmup_steps)
+    #         elif self.trainer.global_step < drop_steps or lr_schedule != 'warmupWithDrop':
+    #             curLR = lr
+    #         else:
+    #             curLR = lr / drop_rate
+    #     elif lr_schedule == 'cyclic':
+    #         curLR = self.scheduler.get_last_lr()[0]
 
-        else:
-            raise NotImplementedError
-        self.logger.experiment.track(curLR, name='lr', context={'model':self.onTeacher, 'stage':self.stage})
+    #     else:
+    #         raise NotImplementedError
+    #     self.logger.experiment.track(curLR, name='lr', context={'model':self.onTeacher, 'stage':self.stage})
 
-        for pg in optimizer.param_groups:
-            pg['lr'] = curLR
-            if not self.onTeacher:
-                pg['weight_decay'] = 0
+    #     for pg in optimizer.param_groups:
+    #         pg['lr'] = curLR
+    #         if not self.onTeacher:
+    #             pg['weight_decay'] = 0
 
-        # update params
-        optimizer.step(closure=optimizer_closure)
-        if lr_schedule =='cyclic':
-            self.scheduler.step()
+    #     # update params
+    #     optimizer.step(closure=optimizer_closure)
+    #     if lr_schedule =='cyclic':
+    #         self.scheduler.step()
 
     def configure_optimizers(self):
         optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=self.momentum,
@@ -1087,6 +1298,7 @@ class STAC(pl.LightningModule):
         return {'optimizer': optimizer}
 
     def fit_model(self):
+        # print("yeeeeeeet", self.hparams['oracle_train_on_labeled'])
         if self.hparams['teacher_init_path']:
             print("Loading teacher model from: {}".format(self.hparams['teacher_init_path']))
             self.load_checkpoint_teacher(self.hparams['teacher_init_path'], self.hparams['teacher_init_skip_last_layer'])
@@ -1104,12 +1316,21 @@ class STAC(pl.LightningModule):
             print("Finished teacher")
 
         # self.load_best_teacher() # TODO I do not think this will always work
-        # The best teacher is the last one, as we do not know how to measure what it the best one
+        # The best teacher is the last one, as we do not know how to measure what is the best one
 
         if self.stage != 7:
             self.copy_student_from_current_teacher()
+            self.copy_phd_from_current_teacher()
             for param in self.teacher.parameters():
                 param.requires_grad = False
+            self.teacher.eval()
+
+            if self.hparams['oracle_train_on_labeled']:
+                print("training a new orracle model on labeled")
+                new_oracle_path = self.train_cnn_on_labeled()
+                self.hparams['oracle_model_path'] = new_oracle_path
+                print("Overriding oracle_model_path to: " + new_oracle_path)
+            
             # opt = self.optimizers()[0]
 
             self.validation_counter = 0
@@ -1131,11 +1352,12 @@ class STAC(pl.LightningModule):
 
     def test(self):
         headers = ['id', 'confidence', 'class', 'bbox']
-        self.csvwriter_file = open(self.output_csv, 'w', newline='')
+        print('yeeet', self.output_csv)
+        self.csvwriter_file = open(self.output_csv, 'w+', newline='')
         self.csvwriter = csv.writer(self.csvwriter_file)
         self.csvwriter.writerow(headers)
 
-        if self.testWithStudent and not self.onlyBurnIn:
+        if 1: #self.testWithStudent and not self.onlyBurnIn:
             print('testing with student')
             self.student_test_trainer.test(model=self)
         else:

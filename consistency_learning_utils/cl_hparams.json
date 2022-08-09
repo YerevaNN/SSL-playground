@@ -2,16 +2,16 @@
     "experiment_name": "debug",
 
     "model": "fasterrcnn",
-    "initialization": "full",
+    "initialization": "backbone",
     "reuse_classifier": "add",
     "teacher_init_path": false,
     "teacher_init_skip_last_layer": false,
 
     "total_steps_teacher_initial": 10000,
     "total_steps_student_initial": 1000,
-    "check_val_steps": 1000,
+    "check_val_steps": 200,
 
-    "learning_rate": 0.02,
+    "learning_rate": 0.01,
     "lr_drop_rate": 10,
     "warmup_steps": 1000,
     "lr_drop_steps": 30000,
@@ -26,23 +26,32 @@
     "student_lr_schedule": "cyclic",
 
     "augmentation": 2,
-    "confidence_threshold": 0.8,
+    "confidence_threshold": 0.7,
     "dt_gamma": 0.1,
-    "thresholding_method": "dynamic",
+    "thresholding_method": "convnet_and_constant",
     "box_score_thresh": 0.005,
     "EMA_keep_rate": 0.996,
-    "batch_size": 5,
+    "batch_size": 4,
     "gradient_clip_threshold": 1,
     "gamma": 0,
 
     "seed": 1,
-    "validation_part": 0,
-    "num_workers": 2,
+    "validation_part": 0.0,
+    "num_workers": 0,
 
-    "oracle_iou_threshold": 0.5,
+    "oracle_iou_threshold": 0.1,
     "clear_predictions_csv": true,
-    "oracle_model_path": "/home/hkhachatrian/Oracle/checkpoints/oracle/last.ckpt",
+    "oracle_pretrained": false,
+    "oracle_model_path": "/home/hkhachatrian/SSL-playground/checkpoints/coco_2017_base_0_from_coco_0_convnet_on_coco_05_ema_0996/our_best.ckpt",
+    "oracle_model_path_init": "/home/hkhachatrian/SSL-playground/checkpoints/coco_2017_base_0_from_coco_0_convnet_on_coco_05_ema_0996/our_best.ckpt",
+    "oracle_train_on_labeled": false,
 
     "consistency_lambda": 2,
-    "consistency_criterion": "KL"
+    "consistency_criterion": "KL",
+
+
+    "version_name": "debug",
+    "phase_folder": "/home/hkhachatrian/SSL-playground/session_data/9rHyS6FE2WOAkSvsy9dX/adaption",
+    "total_steps_teacher": 1000,
+    "total_steps_student": 1000
 }

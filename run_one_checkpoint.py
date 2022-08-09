@@ -14,15 +14,20 @@ parser.add_argument('--stage', type=int, default=None)
 parser.add_argument('--class_num', type=int, default=None)
 parser.add_argument('--output_csv', type=str, default=None)
 parser.add_argument('--teacher_init_path', type=str, default=None)
+parser.add_argument('--skip_data_path', type=str, default=None)
 parser.add_argument('--teacher_init_skip_last_layer', action='store_true')
+parser.add_argument('--oracle_train_on_labeled', action='store_true')
 parser.add_argument('--skip_burn_in', action='store_true')  # if true, student will start immediately
 
 parser.add_argument('--experiment_name', type=str, default=None)
 parser.add_argument('--seed', type=int, default=None)
 parser.add_argument('--learning_rate', type=float, default=None)
+parser.add_argument('--consistency_lambda', type=float, default=None)
 parser.add_argument('--oracle_iou_threshold', type=float, default=None)
 parser.add_argument('--lr_schedule', type=str, default=None)
 parser.add_argument('--oracle_model_path', type=str, default=None)
+parser.add_argument('--oracle_model_path_init', type=str, default=None)
+parser.add_argument('--oracle_pretrained', type=bool, default=None)
 parser.add_argument('--student_learning_rate', type=float, default=None)
 parser.add_argument('--student_lr_schedule', type=str, default=None)
 parser.add_argument('--student_warmup_steps', type=int, default=None)
@@ -49,7 +54,7 @@ parser.add_argument('--num_workers', type=int, default=None)
 args = parser.parse_args()
 
 training_dataset_name = "api_dataset_train"
-phase_folder = './session_data/{}/{}/'.format(args.session_id, args.phase)
+phase_folder = './session_data/{}/{}'.format(args.session_id, args.phase)
 labeled_file_path = '{}/train_{}.txt'.format(phase_folder, args.stage)
 print(labeled_file_path)
 unlabeled_file_path = '{}/train_unlabeled_{}.txt'.format(phase_folder, args.stage)
@@ -90,21 +95,22 @@ if __name__ == "__main__":
                 'initialization', 'reuse_classifier', 'check_val_steps', 'batch_size',
                 'box_score_thresh', 'augmentation', 'teacher_init_path', 'teacher_init_skip_last_layer',
                 'total_steps_teacher_initial', 'total_steps_student_initial', 'skip_burn_in',
-                'oracle_iou_threshold', 'oracle_model_path']:
+                'oracle_iou_threshold', 'oracle_model_path', 'skip_data_path', 'consistency_lambda',
+                'oracle_train_on_labeled', 'oracle_model_path_init', "oracle_pretrained"]:
         if key in argsdict and argsdict[key] is not None:
             print("Overriding {} to {}".format(key, argsdict[key]))
             hparams[key] = argsdict[key]
 
     if 'total_steps_teacher_initial' not in argsdict or argsdict['total_steps_teacher_initial'] is None:
         teacher_steps_defaults = {
-            0: 1000,
-            1: 1000,
-            2: 1000,
-            3: 1000,
-            4: 3000,
-            5: 8000,
-            6: 13000,
-            7: 1200,
+            0: 15000,
+            1: 15000,
+            2: 15000,
+            3: 15000,
+            4: 15000,
+            5: 15000,
+            6: 15000,
+            7: 15000,
         }
         hparams['total_steps_teacher_initial'] = teacher_steps_defaults[args.stage]
         if args.stage == 7:
@@ -114,6 +120,7 @@ if __name__ == "__main__":
     print("Setting lr_drop_steps to {}".format(hparams['lr_drop_steps']))
 
     hparams['total_steps_teacher'] = hparams['total_steps_teacher_initial'] #+ args.stage * hparams['total_steps_teacher_stage_inc']
+    hparams['total_steps_student_initial'] = 2 * hparams['total_steps_teacher_initial']
     hparams['total_steps_student'] = hparams['total_steps_student_initial'] #+ args.stage * hparams['total_steps_student_stage_inc']
 
     pl.seed_everything(hparams['seed'])
@@ -142,8 +149,12 @@ if __name__ == "__main__":
                     hparams['experiment_name'])
 
                 model = STAC(argparse.Namespace(**hparams))
+                skip_data_path = None
+                if 'skip_data_path' in hparams:
+                    skip_data_path = hparams['skip_data_path']
                 model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
-                                   external_val_file_path, external_val_label_root, label_root)
+                                   external_val_file_path, external_val_label_root, label_root,
+                                   skip_data_path=skip_data_path)
 
                 if initialization == 'from_base':
                     if os.path.exists(best_base_checkpoint_filename):
@@ -176,3 +187,20 @@ if __name__ == "__main__":
             hparams['experiment_name'])
 
     hparams['clear_predictions_csv'] = False
+    best_model = STAC(argparse.Namespace(**hparams))
+    best_model.set_datasets(labeled_file_path, unlabeled_file_path, testing_file_path,
+                            external_val_file_path, external_val_label_root, label_root)
+    # eps = 1e-10
+    best_model.set_test_with_student(args.test_with_student, True if args.stage==7 else False)
+    # if args.stage == 7: #best_student_loss - eps > best_teacher_loss or
+    #     best_model.set_test_with_student(False)
+    best_model.test_from_best_checkpoint()
+    if os.path.exists(args.output_csv):
+        new_name = args.output_csv + '.tmp'
+        print("{} already exists. Moving it to {}".format(args.output_csv, new_name))
+        if os.path.exists(new_name):
+            print("Removing old {}".format(new_name))
+            os.remove(new_name)
+        shutil.move(args.output_csv, new_name)
+    print("Copying {} to {}".format(best_model.output_csv, args.output_csv))
+    shutil.copy(best_model.output_csv, args.output_csv)

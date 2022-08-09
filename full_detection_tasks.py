@@ -33,7 +33,7 @@ for task in od_tasks:
     try:
         print('================ Starting Task: {} ================'.format(task))
         cmd = 'python run_pipeline.py --task={} --session=coral-obj-det-{}'.format(task, task[:5])
-        os.system(cmd)
+#        os.system(cmd)
         print(cmd)
         print('================ Task: {} Has Finished ================'.format(task))
         print()
