@@ -14,39 +14,46 @@ import numpy as np
 import random
 import sys
 
-sys.path.insert(1, '/home/hkhachatrian/SSL-playground/consistency_learning_utils/')
+sys.path.insert(1, '/home/hkhachatrian/SSL-playground/')
 
-from lightning_model import model_changed_classifier
-from lightning_model import change_prediction_format
+from consistency_learning_utils.model_changed_classifier import model_changed_classifier
+# from lightning_model import change_prediction_format
 
 import pytorch_lightning as pl
 from pytorch_lightning import Trainer
 from aim.pytorch_lightning import AimLogger
 import os
-from oracle import get_max_IOU
+from .oracle import get_max_IOU
 from torch.nn import BatchNorm2d
-from torchvision.ops import Conv2dNormActivation
+# from torchvision.ops import Conv2dNormActivation
 
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv1 = nn.Conv2d(256, 128, 3, padding=1, stride=1) # 256x7x7 -> 128x7x7
+        self.norm_layer1 = BatchNorm2d(128)
         self.conv2 = nn.Conv2d(128, 64, 3, padding=1, stride=1) # 64x7x7
+        self.norm_layer2 = BatchNorm2d(64)
         self.conv3 = nn.Conv2d(64, 32, 3, padding=1, stride=1) # 32x7x7
+        self.norm_layer3 = BatchNorm2d(32)
         self.conv4 = nn.Conv2d(32, 16, 3, padding=1, stride=1) # 16x7x7
+        self.norm_layer4 = BatchNorm2d(16)
         self.conv5 = nn.Conv2d(16, 8, 3, padding=1, stride=1) # 8x7x7
+        self.norm_layer5 = BatchNorm2d(8)
         self.conv6 = nn.Conv2d(8, 4, 3, padding=1, stride=1) # 4x7x7
+        self.norm_layer6 = BatchNorm2d(4)
         self.conv7 = nn.Conv2d(4, 1, 3, padding=1, stride=1) # 1x7x7
-        self.linear = nn.Linear(7 * 7, 4)
+        # self.norm_layer7 = BatchNorm2d(2)
+        self.linear = nn.Linear(7 * 7, 2)
         self.float()
 
     def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = F.relu(self.conv4(x))
-        x = F.relu(self.conv5(x))
-        x = F.relu(self.conv6(x))
+        x = F.relu(self.norm_layer1(self.conv1(x)))
+        x = F.relu(self.norm_layer2(self.conv2(x)))
+        x = F.relu(self.norm_layer3(self.conv3(x)))
+        x = F.relu(self.norm_layer4(self.conv4(x)))
+        x = F.relu(self.norm_layer5(self.conv5(x)))
+        x = F.relu(self.norm_layer6(self.conv6(x)))
         x = self.conv7(x)
         x = torch.flatten(x, 1, -1)
         x = self.linear(x)
@@ -58,7 +65,7 @@ class Net(nn.Module):
 class FeatureExtractor():
     def __init__(self, class_num, box_score_thresh=0.05):
         self.phd = model_changed_classifier(
-            initialize='full',
+            initialize='backbone',
             reuse_classifier='add',
             class_num=class_num, # TODO
             gamma=0,
@@ -74,13 +81,12 @@ class FeatureExtractor():
 
 
 class MyDataset(Dataset):
-    def __init__(self, image_paths, label_root, class_num, box_score_thresh):
+    def __init__(self, image_paths, label_root, class_num, box_score_thresh, skip_images_path=None):
         super().__init__()
         self.feature_extractor = FeatureExtractor(class_num, box_score_thresh)
         self.image_paths = image_paths 
         self.label_root = label_root
         self.transform = Compose([ToTensor()])
-
 
     def __len__(self):
         return len(self.image_paths)
@@ -94,9 +100,15 @@ class MyDataset(Dataset):
         return max_iou
 
     def __getitem__(self, index: int):
-        img_path, bbox, iou, conf, clas = self.image_paths[index].strip().split(' ')
-        iou = int((float(iou) - 1e-7) * 4)
+        try:
+            img_path, bbox, iou, conf, clas = self.image_paths[index].strip().split(' ')
+        except Exception as e:
+            print(self.image_paths[index])
+            raise e
+        iou_with_gt = float(iou)
+        iou = int((float(iou) - 1e-7) * 2)
         bbox = [int(float(_)) for _ in bbox[1:-1].split(',')]
+        old_bbox = bbox
         bbox = torch.cuda.FloatTensor(bbox, device="cuda")
         bbox = bbox.unsqueeze(dim = 0)
 
@@ -112,16 +124,30 @@ class MyDataset(Dataset):
         features = self.feature_extractor.get_features(image, [bbox])
 
         target = torch.tensor((iou), device='cuda')
-        return features, target, float(conf), int(clas)
+        conf = torch.tensor(float(conf), device='cuda')
+        clas = torch.tensor(int(clas), device='cuda')
+        
+        return img_path, features, target, old_bbox, iou_with_gt, conf, clas
 
 
-def get_train_test_loaders(feature_data_path, label_root, split, batch_size, class_num, box_score_thresh):
-    file_lines = []
+def get_train_test_loaders(feature_data_path, label_root, split, batch_size, class_num, box_score_thresh, skip_data_path=None):
+    file_lines_old = []
     # Format of the file must be like this:
     # /home/...../...png [xmin,ymin,xmax,ymax] iou conf cls
     with open(feature_data_path) as f:
-        file_lines = f.readlines()
-    random.shuffle(file_lines)
+        file_lines_old = f.readlines()
+    # random.shuffle(file_lines)
+    file_lines = []
+    if skip_data_path is not None:
+        with open(skip_data_path) as f:
+            skip_data_lines = f.readlines()
+            for line in file_lines_old:
+                impath = line.split(' ')[0]
+                if not impath in skip_data_lines:
+                    file_lines.append(line)
+    else:
+        file_lines = file_lines_old
+
 
 
     split_id = int(len(file_lines) * split)
@@ -136,11 +162,11 @@ def get_train_test_loaders(feature_data_path, label_root, split, batch_size, cla
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size)
 
-    return train_dataloader, test_dataloader
+    return train_dataloader, test_dataloader 
 
 
 class Oracle(pl.LightningModule):
-    def __init__(self, experiment_name, lr = 1, class_num = 91):
+    def __init__(self, experiment_name, lr = 1, class_num = 91, train_epochs = 1):
         super().__init__()
         self.class_num = class_num
         self.lr = lr
@@ -161,12 +187,12 @@ class Oracle(pl.LightningModule):
         #     mode='max',
         #     monitor='val_accuracy'
         # )
-        self.trainer = Trainer(gpus=-1, max_epochs=1000,
+        self.trainer = Trainer(accelerator='ddp', gpus=-1, max_epochs=train_epochs,
                                logger=self.aim_logger,
                             #    callbacks = [checkpoint_callback],
-                               gradient_clip_val=0.5,
-                            #    check_val_every_n_epoch=1)
-                               val_check_interval = 0.02)
+                            #    gradient_clip_val=0.5,
+                               check_val_every_n_epoch=1)
+                            #    val_check_interval = 0.005)
         self.loss_fn = nn.CrossEntropyLoss()
         # self.targets_file = os.getcwd() + "/ious_nightowls.npy"
         # self.ious = {i: [] for i in [1, 2, 3]}
@@ -175,14 +201,16 @@ class Oracle(pl.LightningModule):
         self.global_info_val = {i: {
             "tp": 0,
             "fp": 0,
-            "fn": 0
+            "fn": 0,
+            "tn": 0
         } for i in range(1, self.class_num + 1)}
     
     def global_info_init_train(self):
         self.global_info_train = {i: {
             "tp": 0,
             "fp": 0,
-            "fn": 0
+            "fn": 0,
+            "tn": 0
         } for i in range(1, self.class_num + 1)}
 
     def global_info_init(self):
@@ -191,15 +219,17 @@ class Oracle(pl.LightningModule):
         self.global_info_test = {i: {
             "tp": 0,
             "fp": 0,
-            "fn": 0
+            "fn": 0,
+            "tn": 0
         } for i in range(1, self.class_num + 1)}
 
     def set_datasets(self, feature_data_path, label_root, split, batch_size,
-                     class_num, box_score_thresh):
+                     class_num, box_score_thresh, skip_data_path=None):
         self.train_loader, self.test_loader = get_train_test_loaders(feature_data_path,
                                                                      label_root, split, batch_size,
                                                                      class_num,
-                                                                     box_score_thresh)
+                                                                     box_score_thresh,
+                                                                     skip_data_path)
 
     def load_from_path(self, path):
         sd = torch.load(path)
@@ -218,17 +248,30 @@ class Oracle(pl.LightningModule):
         return self.test_loader
 
     def configure_optimizers(self):
-        # optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=0.9)
-        optimizer = optim.Adam(self.parameters(), lr=self.lr)
+        optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=0.9, weight_decay=0.01)
+        # optimizer = optim.Adam(self.parameters(), lr=self.lr)
+        self.scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=1e-8, max_lr=self.lr, step_size_up=2000)
+        return {'optimizer': optimizer,'lr_scheduler': self.scheduler}
 
-        return {'optimizer': optimizer}
+    def optimizer_step(self, epoch: int = None, batch_idx: int = None, optimizer = None,
+                       optimizer_idx: int = None, optimizer_closure = None, on_tpu: bool = None,
+                       using_native_amp: bool = None, using_lbfgs: bool = None):
+
+        curLR = self.scheduler.get_last_lr()[0]
+
+        # self.logger.experiment.track(curLR, name='lr', context={'model':self.onTeacher, 'stage':self.stage})
+
+        for pg in optimizer.param_groups:
+            pg['lr'] = curLR
+        optimizer.step(closure=optimizer_closure)
+        self.scheduler.step()
 
     def loss_function(self, y_pred, y_truth):
         return self.loss_fn(y_pred, y_truth)
 
 
     def training_step(self, batch, batch_inx):
-        inputs, labels, conf, clas = batch
+        img_paths, inputs, labels, bboxes, ious, confs, classes = batch
         for i in range(len(inputs)):
             inputs[i] = torch.squeeze(inputs[i], 0)
         outputs = self.forward(inputs)
@@ -236,14 +279,18 @@ class Oracle(pl.LightningModule):
         for i in range(len(outputs)):
             label = labels[i].item()
             output = torch.argmax(outputs[i]).item()
-            cl = clas[i].item()
+            cl = classes[i].item()
+            # cl = 1
             # self.ious[cl].append(label.cpu().detach().numpy())
-            if label >= 2 and output >= 2:
+            num_cls = 2
+            if label >= num_cls / 2 and output >= num_cls / 2:
                 self.global_info_train[cl]['tp'] += 1
-            elif label < 2 and output >= 2:
+            elif label < num_cls / 2 and output >= num_cls / 2:
                 self.global_info_train[cl]['fp'] += 1
-            elif label >= 2 and output < 2:
+            elif label >= num_cls / 2 and output < num_cls / 2:
                 self.global_info_train[cl]['fn'] += 1
+            else:
+                self.global_info_train[cl]['tn'] += 1
 
         self.logger.experiment.track(loss.item(), name='training_loss')
         return {'loss': loss}
@@ -261,22 +308,36 @@ class Oracle(pl.LightningModule):
         return self.validation_step(batch, batch_inx)
 
     def validation_step(self, batch, batch_idx):
-        inputs, labels, conf, clas = batch
+        img_paths, inputs, labels, bboxes, ious, confs, classes = batch
         for i in range(len(inputs)):
             inputs[i] = torch.squeeze(inputs[i], 0)
         outputs = self.forward(inputs)
+
+        # lines = []
+        # for i in range(len(inputs)):
+        #     boxstr = str(bboxes[0][i].item()) + ',' + str(bboxes[1][i].item()) + ',' + str(bboxes[2][i].item()) + ',' + str(bboxes[3][i].item())
+        #     lines.append(img_paths[i] + ' ' + boxstr + ' ' + str(classes[i].item()) + ' ' + str(ious[i].item()) + ' ' + str(labels[i].item()) + ' ' + str(confs[i].item()) + "".join([' ' + str(_.item()) for _ in outputs[i]]) + '\n')
+
+        # with open("/home/hkhachatrian/SSL-playground/consistency_learning_utils/nets/oracle/feature_data/C2.txt", "a+") as f:
+        #     f.writelines(lines)
+
         loss = self.loss_function(outputs, labels)
         for i in range(len(outputs)):
             label = labels[i].item()
             output = torch.argmax(outputs[i]).item()
-            cl = clas[i].item()
-            print(label, output, cl)
-            if label >= 2 and output >= 2:
+            # cl = 1
+            cl = classes[i].item()
+
+            # print(label, output, cl)
+            num_cls = 2
+            if label >= num_cls / 2 and output >= num_cls / 2:
                 self.global_info_val[cl]['tp'] += 1
-            elif label < 2 and output >= 2:
+            elif label < num_cls / 2 and output >= num_cls / 2:
                 self.global_info_val[cl]['fp'] += 1
-            elif label >= 2 and output < 2:
+            elif label >= num_cls / 2 and output < num_cls / 2:
                 self.global_info_val[cl]['fn'] += 1
+            else:
+                self.global_info_val[cl]['tn'] += 1
 
         self.logger.experiment.track(loss.item(), name='val_loss')
 
@@ -284,12 +345,29 @@ class Oracle(pl.LightningModule):
 
     def validation_epoch_end(self, results):
         fscores = self.f1_scores(self.global_info_val)
+        for k in self.global_info_val.keys():
+            dct = self.global_info_val[k]
+            tp = dct['tp']
+            fp = dct['fp']
+            fn = dct['fn']
+            tn = dct['tn']
+            if tp + fp == 0:
+                accuracy_on_positives = 0
+            else:
+                accuracy_on_positives = tp / (tp + fp)
+            if tn + fn == 0:
+                accuracy_on_negatives = 0
+            else:
+                accuracy_on_negatives = tn / (tn + fn)
+            
+            accs = str(accuracy_on_positives) + ', ' + str(accuracy_on_negatives)
+            print("class " + str(k) + ": acc on positives and negatives: " + accs)
         self.global_info_init_val()
         # self.logger.experiment.track(fscores[0], name='fscore_class_0')
-        # self.logger.experiment.track(fscores[1], name='fscore_class_1')
+        # self.logger.experiment.track(fscsores[1], name='fscore_class_1')
         # self.logger.experiment.track(fscores[2], name='fscore_class_2')
         accuracy = sum(fscores) / len(fscores)
-        if accuracy > self.best_validation_accuracy:
+        if accuracy >= self.best_validation_accuracy:
             if self.best_validation_accuracy == -1: # To avoid saving on validation sanity check
                 self.best_validation_accuracy = 0
             else:
@@ -330,41 +408,22 @@ class Oracle(pl.LightningModule):
         return fscores
 
 
-def preprocess_predictions(pred):
-    boxes_per_image = [len(p) for p in pred]
-    # for boxes, p in enumerate(pred):
-    #     if p.shape[0] < 100:
-    #         zer = torch.zeros((100-p.shape[0], p.shape[1]))
-    #         pred[i] = torch.cat((p, zer))
-    #     pred[i] = torch.transpose(pred[i], 0, 1)
-    #     i += 1
-    for i, p in enumerate(pred):
-        pred[i] = p.to(device='cuda')
-    # pred = torch.unsqueeze(torch.stack(pred), dim=1)
-    return boxes_per_image, pred
-
-def select_pls(output, boxes_per_image, pred, iou_thresh):
-    new_pred = []
-    for i, p in enumerate(pred):
-        pred_on_image = output[i].cpu()
-        pred_on_image = torch.squeeze(pred_on_image)
-        indices = torch.where(pred_on_image >= iou_thresh)
-        if len(indices) == 0:
-            print("There were no predictions above " + str(iou_thresh))
-            indices.append(1)
-        new_p = p[indices][:,:6]
-        
-        new_pred.append(new_p)
-    return new_pred
-
 def inference(pred, model_path, iou_thresh=0.5, experiment_name=""):
     model = Oracle(experiment_name)
     model.cuda()
-    # model.load_from_path(model_path)
-    old_pred = [(torch.clone(p1), torch.clone(p2)) for p1, p2 in pred]
-    pred_boxes = [p[0] for p in pred]
-    pred_features = [p[1] for p in pred]
-    boxes_per_image, pred = preprocess_predictions(pred_features)
-    output = model(pred)
-    selected_predictions = select_pls(output, boxes_per_image, old_pred, iou_thresh)
-    return selected_predictions
+    model.load_from_path(model_path)
+    features, boxes, scores, labels = pred
+    kept_boxes = []
+    kept_scores = []
+    kept_labels = []
+    for feature, box, score, label in zip(features, boxes, scores, labels):
+        output = model(feature)
+        keep_indices = []
+        for j in range(output.shape[0]):
+            if torch.argmax(output[j]).item() != 0:
+                keep_indices.append(j)
+        kept_boxes.append(box[keep_indices])
+        kept_scores.append(score[keep_indices])
+        kept_labels.append(label[keep_indices])
+    return (kept_boxes, kept_scores, kept_labels)
+

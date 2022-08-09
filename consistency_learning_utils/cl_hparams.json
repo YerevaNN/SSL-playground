@@ -11,7 +11,7 @@
     "total_steps_student_initial": 1000,
     "check_val_steps": 200,
 
-    "learning_rate": 0.01,
+    "learning_rate": 0.02,
     "lr_drop_rate": 10,
     "warmup_steps": 1000,
     "lr_drop_steps": 30000,
@@ -19,7 +19,7 @@
     "momentum": 0.9,
     "weight_decay": 0,
 
-    "student_learning_rate": 0.01,
+    "student_learning_rate": 0.02,
     "student_lr_drop_rate": 10,
     "student_warmup_steps": 1000,
     "student_lr_drop_steps": 4000,
@@ -32,6 +32,7 @@
     "box_score_thresh": 0.005,
     "EMA_keep_rate": 0.996,
     "batch_size": 4,
+    "gradac_batches": 1,
     "gradient_clip_threshold": 1,
     "gamma": 0,
 

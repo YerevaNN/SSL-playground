@@ -661,7 +661,7 @@ class STAC(pl.LightningModule):
             max_steps=self.hparams['total_steps_teacher'],
             check_val_every_n_epoch=self.check_val_epochs,
             deterministic=True,
-            accumulate_grad_batches=8
+            accumulate_grad_batches=self.hparams['gradac_batches']
         )
         self.teacher_test_trainer = Trainer(
             gpus=1, checkpoint_callback=True,  # what is this?
@@ -674,7 +674,7 @@ class STAC(pl.LightningModule):
             max_steps=self.hparams['total_steps_teacher'],
             check_val_every_n_epoch=self.check_val_epochs,
             deterministic=True,
-            accumulate_grad_batches=8
+            accumulate_grad_batches=self.hparams['gradac_batches']
         )
 
 
@@ -700,7 +700,7 @@ class STAC(pl.LightningModule):
             max_steps=self.hparams['total_steps_student'],
             check_val_every_n_epoch=self.check_val_epochs,
             deterministic=True,
-            accumulate_grad_batches=8
+            accumulate_grad_batches=self.hparams['gradac_batches']
         )
         self.student_test_trainer = Trainer(
             gpus=1, checkpoint_callback=True,  # what is this?
@@ -713,7 +713,7 @@ class STAC(pl.LightningModule):
             max_steps=self.hparams['total_steps_student'],
             check_val_every_n_epoch=self.check_val_epochs,
             deterministic=True,
-            accumulate_grad_batches=8
+            accumulate_grad_batches=self.hparams['gradac_batches']
         )
 
     def student_forward(self, x, image_paths):
@@ -1246,46 +1246,46 @@ class STAC(pl.LightningModule):
         y_hat = y_hat.argmax(dim=-1)
         return torch.sum(y == y_hat).item() / len(y)
 
-    # def optimizer_step(self, epoch: int = None, batch_idx: int = None, optimizer = None,
-    #                    optimizer_idx: int = None, optimizer_closure = None, on_tpu: bool = None,
-    #                    using_native_amp: bool = None, using_lbfgs: bool = None):
-    #     lr = self.hparams['learning_rate']
-    #     lr_schedule = self.hparams['lr_schedule']
-    #     drop_steps = self.hparams['lr_drop_steps']
-    #     drop_rate = self.hparams['lr_drop_rate']
-    #     warmup_steps = self.hparams['warmup_steps']
-    #     if not self.onTeacher:
-    #         lr = self.hparams['student_learning_rate']
-    #         lr_schedule = self.hparams['student_lr_schedule']
-    #         drop_steps = self.hparams['student_lr_drop_steps']
-    #         drop_rate = self.hparams['student_lr_drop_rate']
-    #         warmup_steps = self.hparams['student_warmup_steps']
+    def optimizer_step(self, epoch: int = None, batch_idx: int = None, optimizer = None,
+                       optimizer_idx: int = None, optimizer_closure = None, on_tpu: bool = None,
+                       using_native_amp: bool = None, using_lbfgs: bool = None):
+        lr = self.hparams['learning_rate']
+        lr_schedule = self.hparams['lr_schedule']
+        drop_steps = self.hparams['lr_drop_steps']
+        drop_rate = self.hparams['lr_drop_rate']
+        warmup_steps = self.hparams['warmup_steps']
+        if not self.onTeacher:
+            lr = self.hparams['student_learning_rate']
+            lr_schedule = self.hparams['student_lr_schedule']
+            drop_steps = self.hparams['student_lr_drop_steps']
+            drop_rate = self.hparams['student_lr_drop_rate']
+            warmup_steps = self.hparams['student_warmup_steps']
 
-    #     if lr_schedule == 'constant':
-    #         curLR = lr
-    #     elif lr_schedule == 'warmup' or lr_schedule == 'warmupWithDrop':
-    #         if self.trainer.global_step < warmup_steps:
-    #             curLR = lr * min(1., float(self.trainer.global_step + 1) / warmup_steps)
-    #         elif self.trainer.global_step < drop_steps or lr_schedule != 'warmupWithDrop':
-    #             curLR = lr
-    #         else:
-    #             curLR = lr / drop_rate
-    #     elif lr_schedule == 'cyclic':
-    #         curLR = self.scheduler.get_last_lr()[0]
+        if lr_schedule == 'constant':
+            curLR = lr
+        elif lr_schedule == 'warmup' or lr_schedule == 'warmupWithDrop':
+            if self.trainer.global_step < warmup_steps:
+                curLR = lr * min(1., float(self.trainer.global_step + 1) / warmup_steps)
+            elif self.trainer.global_step < drop_steps or lr_schedule != 'warmupWithDrop':
+                curLR = lr
+            else:
+                curLR = lr / drop_rate
+        elif lr_schedule == 'cyclic':
+            curLR = self.scheduler.get_last_lr()[0]
 
-    #     else:
-    #         raise NotImplementedError
-    #     self.logger.experiment.track(curLR, name='lr', context={'model':self.onTeacher, 'stage':self.stage})
+        else:
+            raise NotImplementedError
+        self.logger.experiment.track(curLR, name='lr', context={'model':self.onTeacher, 'stage':self.stage})
 
-    #     for pg in optimizer.param_groups:
-    #         pg['lr'] = curLR
-    #         if not self.onTeacher:
-    #             pg['weight_decay'] = 0
+        for pg in optimizer.param_groups:
+            pg['lr'] = curLR
+            if not self.onTeacher:
+                pg['weight_decay'] = 0
 
-    #     # update params
-    #     optimizer.step(closure=optimizer_closure)
-    #     if lr_schedule =='cyclic':
-    #         self.scheduler.step()
+        # update params
+        optimizer.step(closure=optimizer_closure)
+        if lr_schedule =='cyclic':
+            self.scheduler.step()
 
     def configure_optimizers(self):
         optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=self.momentum,
