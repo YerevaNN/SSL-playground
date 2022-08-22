@@ -30,6 +30,7 @@ parser.add_argument('--oracle_model_path_init', type=str, default=None)
 parser.add_argument('--oracle_pretrained', type=bool, default=None)
 parser.add_argument('--student_learning_rate', type=float, default=None)
 parser.add_argument('--student_lr_schedule', type=str, default=None)
+parser.add_argument('--oracle_feature_data_path', type=str, default=None)
 parser.add_argument('--student_warmup_steps', type=int, default=None)
 parser.add_argument('--gradient_clip_threshold', type=float, default=None)
 parser.add_argument('--confidence_threshold', type=float, default=None)
@@ -96,14 +97,15 @@ if __name__ == "__main__":
                 'box_score_thresh', 'augmentation', 'teacher_init_path', 'teacher_init_skip_last_layer',
                 'total_steps_teacher_initial', 'total_steps_student_initial', 'skip_burn_in',
                 'oracle_iou_threshold', 'oracle_model_path', 'skip_data_path', 'consistency_lambda',
-                'oracle_train_on_labeled', 'oracle_model_path_init', 'oracle_pretrained', 'gradac_batches']:
+                'oracle_train_on_labeled', 'oracle_model_path_init', 'oracle_pretrained', 'gradac_batches',
+                'oracle_feature_data_path']:
         if key in argsdict and argsdict[key] is not None:
             print("Overriding {} to {}".format(key, argsdict[key]))
             hparams[key] = argsdict[key]
 
     if 'total_steps_teacher_initial' not in argsdict or argsdict['total_steps_teacher_initial'] is None:
         teacher_steps_defaults = {
-            0: 15000,
+            0: 100000,
             1: 15000,
             2: 15000,
             3: 15000,

@@ -1,6 +1,8 @@
 from argparse import Namespace
 import os
+import random
 import csv
+from tkinter import W
 import numpy as np
 from .nets.oracle.convnet import Oracle
 import json
@@ -281,7 +283,8 @@ def change_prediction_format(unlab_pred, phd_pred):
     return (all_features, all_boxes, all_scores, all_labels)
 
 
-def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=None, iou_thresh=None, model_path=None):
+def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=None, iou_thresh=None,
+                       model_path=None, teacher_thresholds=None, conv_thresholds=None):
     if type == 'constant':
         if conf is not None:
             selected_pseudo_labels = constant_thresholding(pred, conf)
@@ -315,6 +318,22 @@ def filter_predictions(type, pred, class_num=None, truth=None, conf=None, gamma=
             boxes, scores, labels = [], [], []
             for box, score, label in zip(old_boxes, old_scores, old_labels):
                 indices = torch.where(score >= conf)
+                boxes.append(box[indices])
+                scores.append(score[indices])
+                labels.append(label[indices])
+            selected_pseudo_labels = (boxes, scores, labels)
+        else:
+            raise NotImplementedError
+    elif type == 'convnet_and_optimal_constant':
+        if iou_thresh is not None and model_path is not None and teacher_thresholds is not None:
+            old_selected_pseudo_labels = inference(pred, model_path, iou_thresh=iou_thresh,
+                                                   conv_thresholds=conv_thresholds)
+            old_boxes, old_scores, old_labels = old_selected_pseudo_labels
+            boxes, scores, labels = [], [], []
+            for box, score, label in zip(old_boxes, old_scores, old_labels):
+                box_labels = (label.int() - 1).cpu()
+                thresholds = [teacher_thresholds[x] for x in box_labels]
+                indices = torch.where(score >= torch.Tensor(thresholds).cuda())
                 boxes.append(box[indices])
                 scores.append(score[indices])
                 labels.append(label[indices])
@@ -399,7 +418,7 @@ class STAC(pl.LightningModule):
             box_score_thresh=self.hparams['box_score_thresh'])
         
         self.phd = model_changed_classifier(
-            initialize='full',
+            initialize='backbone',
             reuse_classifier=self.hparams['reuse_classifier'],
             class_num=self.hparams['class_num'],
             gamma=self.hparams['gamma'],
@@ -428,7 +447,7 @@ class STAC(pl.LightningModule):
         feature_data_path = "/home/hkhachatrian/SSL-playground/consistency_learning_utils/nets/oracle/feature_data/" + experiment_name + ".txt"
         if os.path.exists(feature_data_path):
             os.remove(feature_data_path)
-
+        print("Starting to write new rfature file at: " + feature_data_path)
         with open(os.path.join(self.hparams['phase_folder'], 'train_' + str(self.stage) + '.txt')) as images_path:
             for im_path in images_path:
                 im_path = im_path[:-1]
@@ -449,6 +468,66 @@ class STAC(pl.LightningModule):
                 teacher_labels = pred_teacher[0]['labels']
                 teacher_scores = pred_teacher[0]['scores']
                 target_boxes = get_target(label_root, im_path.split('/')[-1])
+
+                # generating negatives
+                ratios = [0.33, 0.67, 1, 2, 3]
+                num_pixels = [i for i in range(1000, width * height, 1000)]
+                cnt = 50
+                while cnt > 0:
+                    ratio = random.choice(ratios)
+                    num_pixel = random.choice(num_pixels)
+                    # print(ratio, num_pixel)
+                    # print(width, height)
+                    w = int((num_pixel * ratio) ** 0.5)
+                    h = num_pixel // w
+                    if w + 2 >= width or h + 2 >= height:
+                        continue
+                    # print(w, h)
+                    n_xmin = random.randrange(1, width - w - 1)
+                    n_ymin = random.randrange(1, height - h - 1)
+                    # print(n_xmin, n_ymin)
+                    n_xmax = n_xmin + w
+                    n_ymax = n_ymin + h
+                    max_iou = 0
+                    for gt in target_boxes:
+                        xmin = gt['bndbox']['xmin']
+                        ymin = gt['bndbox']['ymin']
+                        xmax = gt['bndbox']['xmax']
+                        ymax = gt['bndbox']['ymax']
+                        iou = bb_intersection_over_union([n_xmin, n_ymin, n_xmax, n_ymax], [xmin, ymin, xmax, ymax])
+                        if iou > max_iou:
+                            max_iou = iou
+                    if max_iou < 0.5:
+                        cnt -= 1
+                        str_positive = im_path + ' ' + '[' + str(n_xmin) + ',' + str(n_ymin) + ',' + str(n_xmax) + ',' + str(n_ymax) + '] ' + str(max_iou)+ ' ' + str(0) + ' ' + str(0) + '\n'
+                        f1 = open(feature_data_path, "a+")
+                        f1.writelines(str_positive)
+                        f1.close()
+
+                # generating positives
+                for gt in target_boxes:
+                    cnt = 50 // len(target_boxes)
+                    while cnt > 0:
+                        xmin = gt['bndbox']['xmin']
+                        ymin = gt['bndbox']['ymin']
+                        xmax = gt['bndbox']['xmax']
+                        ymax = gt['bndbox']['ymax']
+                        gam = 0.2
+                        p_xmin = int(random.uniform(xmin - gam * width, xmin + gam * width))
+                        p_ymin = int(random.uniform(ymin - gam * height, ymin + gam * height))
+                        p_xmax = int(random.uniform(xmax - gam * width, xmax + gam * width))
+                        p_ymax = int(random.uniform(ymax - gam * height, ymax + gam * height))
+                        if p_xmax <= p_xmin or p_ymax <= p_ymin or p_xmin <= 0 or p_xmax >= width or p_ymin <= 0 or p_ymax >= height:
+                            continue
+                        iou = bb_intersection_over_union([p_xmin, p_ymin, p_xmax, p_ymax], [xmin, ymin, xmax, ymax])
+                        if iou >= 0.5:
+                            cnt -= 1
+                            str_positive = im_path + ' ' + '[' + str(p_xmin) + ',' + str(p_ymin) + ',' + str(p_xmax) + ',' + str(p_ymax) + '] ' + str(iou)+ ' ' + str(0) + ' ' + str(0) + '\n'
+                            f1 = open(feature_data_path, "a+")
+                            f1.writelines(str_positive)
+                            f1.close()
+
+                # generating using teacher
                 for i in range(len(teacher_boxes)):
                     teacher_max_iou = 0
                     t_xmin = teacher_boxes[i][0].item()
@@ -465,10 +544,11 @@ class STAC(pl.LightningModule):
                         iou = bb_intersection_over_union([t_xmin, t_ymin, t_xmax, t_ymax], [xmin, ymin, xmax, ymax])
                         if iou > teacher_max_iou:
                             teacher_max_iou = iou
-                    str_teacher = im_path + ' ' + '[' + str(t_xmin) + ',' + str(t_ymin) + ',' + str(t_xmax) + ',' + str(t_ymax) + '] ' + str(teacher_max_iou)+ ' ' + str(t_score) + ' ' + str(t_label) + '\n'
-                    f1 = open(feature_data_path, "a+")
-                    f1.writelines(str_teacher)
-                    f1.close()
+                    if teacher_max_iou <= 0.3 or teacher_max_iou >= 0.7:
+                        str_teacher = im_path + ' ' + '[' + str(t_xmin) + ',' + str(t_ymin) + ',' + str(t_xmax) + ',' + str(t_ymax) + '] ' + str(teacher_max_iou)+ ' ' + str(t_score) + ' ' + str(t_label) + '\n'
+                        f1 = open(feature_data_path, "a+")
+                        f1.writelines(str_teacher)
+                        f1.close()
                 
 
         return feature_data_path
@@ -478,7 +558,10 @@ class STAC(pl.LightningModule):
         experiment_name = self.hparams['version_name']
 
 
-        feature_data_path = self.make_feature_data_file(label_root, experiment_name)
+        if 'oracle_feature_data_path' in self.hparams.keys():
+            feature_data_path = self.hparams['oracle_feature_data_path']
+        else:
+            feature_data_path = self.make_feature_data_file(label_root, experiment_name)
         print("feature_data_path: ", feature_data_path)
 
 
@@ -487,7 +570,7 @@ class STAC(pl.LightningModule):
         box_score_thresh = 0.005
         lr = 0.001
         epochs_per_stage = [
-            5,
+            1,
             4,
             3,
             2,
@@ -505,8 +588,8 @@ class STAC(pl.LightningModule):
             checkpoint_path = self.hparams["oracle_model_path_init"]
             model.load_from_path(checkpoint_path)
 
-        split = 0.9
-        batch_size = 12
+        split = 0.99
+        batch_size = 16
         model.set_datasets(feature_data_path, label_root, split, batch_size, class_num, box_score_thresh)
         model.fit_model()
         
@@ -882,6 +965,11 @@ class STAC(pl.LightningModule):
         #         self.zarr_file[cur_box_name + '_bbox'] = bbox
         #         self.zarr_file[cur_box_name + '_feat'] = feat
 
+        teacher_thresholds, conv_thresholds = None, None
+
+        if self.hparams['thresholding_method'] == 'convnet_and_optimal_constant':
+            teacher_thresholds = np.load('/home/hkhachatrian/SSL-playground/checkpoints/coco_2017_base_0_from_coco_0_convnet_on_coco_05_long/teacher_thresholds.npy')
+            conv_thresholds = np.load('/home/hkhachatrian/SSL-playground/checkpoints/coco_2017_base_0_from_coco_0_convnet_on_coco_05_long/conv_thresholds.npy')
 
         selected_pseudo_labels = filter_predictions(self.hparams['thresholding_method'], 
                                                     predictions, truth=unlabeled_y,
@@ -889,7 +977,9 @@ class STAC(pl.LightningModule):
                                                     conf=self.hparams['confidence_threshold'],
                                                     gamma=self.hparams['dt_gamma'],
                                                     iou_thresh=self.hparams['oracle_iou_threshold'],
-                                                    model_path=self.hparams['oracle_model_path'])
+                                                    model_path=self.hparams['oracle_model_path'],
+                                                    teacher_thresholds=teacher_thresholds,
+                                                    conv_thresholds=conv_thresholds)
 
         # selected_pseudo_labels_dynamic = filter_predictions('dynamic', 
         #                                             predictions, truth=unlabeled_y,
@@ -1246,46 +1336,46 @@ class STAC(pl.LightningModule):
         y_hat = y_hat.argmax(dim=-1)
         return torch.sum(y == y_hat).item() / len(y)
 
-    def optimizer_step(self, epoch: int = None, batch_idx: int = None, optimizer = None,
-                       optimizer_idx: int = None, optimizer_closure = None, on_tpu: bool = None,
-                       using_native_amp: bool = None, using_lbfgs: bool = None):
-        lr = self.hparams['learning_rate']
-        lr_schedule = self.hparams['lr_schedule']
-        drop_steps = self.hparams['lr_drop_steps']
-        drop_rate = self.hparams['lr_drop_rate']
-        warmup_steps = self.hparams['warmup_steps']
-        if not self.onTeacher:
-            lr = self.hparams['student_learning_rate']
-            lr_schedule = self.hparams['student_lr_schedule']
-            drop_steps = self.hparams['student_lr_drop_steps']
-            drop_rate = self.hparams['student_lr_drop_rate']
-            warmup_steps = self.hparams['student_warmup_steps']
+    # def optimizer_step(self, epoch: int = None, batch_idx: int = None, optimizer = None,
+    #                    optimizer_idx: int = None, optimizer_closure = None, on_tpu: bool = None,
+    #                    using_native_amp: bool = None, using_lbfgs: bool = None):
+    #     lr = self.hparams['learning_rate']
+    #     lr_schedule = self.hparams['lr_schedule']
+    #     drop_steps = self.hparams['lr_drop_steps']
+    #     drop_rate = self.hparams['lr_drop_rate']
+    #     warmup_steps = self.hparams['warmup_steps']
+    #     if not self.onTeacher:
+    #         lr = self.hparams['student_learning_rate']
+    #         lr_schedule = self.hparams['student_lr_schedule']
+    #         drop_steps = self.hparams['student_lr_drop_steps']
+    #         drop_rate = self.hparams['student_lr_drop_rate']
+    #         warmup_steps = self.hparams['student_warmup_steps']
 
-        if lr_schedule == 'constant':
-            curLR = lr
-        elif lr_schedule == 'warmup' or lr_schedule == 'warmupWithDrop':
-            if self.trainer.global_step < warmup_steps:
-                curLR = lr * min(1., float(self.trainer.global_step + 1) / warmup_steps)
-            elif self.trainer.global_step < drop_steps or lr_schedule != 'warmupWithDrop':
-                curLR = lr
-            else:
-                curLR = lr / drop_rate
-        elif lr_schedule == 'cyclic':
-            curLR = self.scheduler.get_last_lr()[0]
+    #     if lr_schedule == 'constant':
+    #         curLR = lr
+    #     elif lr_schedule == 'warmup' or lr_schedule == 'warmupWithDrop':
+    #         if self.trainer.global_step < warmup_steps:
+    #             curLR = lr * min(1., float(self.trainer.global_step + 1) / warmup_steps)
+    #         elif self.trainer.global_step < drop_steps or lr_schedule != 'warmupWithDrop':
+    #             curLR = lr
+    #         else:
+    #             curLR = lr / drop_rate
+    #     elif lr_schedule == 'cyclic':
+    #         curLR = self.scheduler.get_last_lr()[0]
 
-        else:
-            raise NotImplementedError
-        self.logger.experiment.track(curLR, name='lr', context={'model':self.onTeacher, 'stage':self.stage})
+    #     else:
+    #         raise NotImplementedError
+    #     self.logger.experiment.track(curLR, name='lr', context={'model':self.onTeacher, 'stage':self.stage})
 
-        for pg in optimizer.param_groups:
-            pg['lr'] = curLR
-            if not self.onTeacher:
-                pg['weight_decay'] = 0
+    #     for pg in optimizer.param_groups:
+    #         pg['lr'] = curLR
+    #         if not self.onTeacher:
+    #             pg['weight_decay'] = 0
 
-        # update params
-        optimizer.step(closure=optimizer_closure)
-        if lr_schedule =='cyclic':
-            self.scheduler.step()
+    #     # update params
+    #     optimizer.step(closure=optimizer_closure)
+    #     if lr_schedule =='cyclic':
+    #         self.scheduler.step()
 
     def configure_optimizers(self):
         optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=self.momentum,
@@ -1320,7 +1410,7 @@ class STAC(pl.LightningModule):
 
         if self.stage != 7:
             self.copy_student_from_current_teacher()
-            self.copy_phd_from_current_teacher()
+            # self.copy_phd_from_current_teacher()
             for param in self.teacher.parameters():
                 param.requires_grad = False
             self.teacher.eval()

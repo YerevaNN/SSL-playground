@@ -189,10 +189,11 @@ class Oracle(pl.LightningModule):
         # )
         self.trainer = Trainer(accelerator='ddp', gpus=-1, max_epochs=train_epochs,
                                logger=self.aim_logger,
+                               accumulate_grad_batches=8,
                             #    callbacks = [checkpoint_callback],
                             #    gradient_clip_val=0.5,
-                               check_val_every_n_epoch=1)
-                            #    val_check_interval = 0.005)
+                            #    check_val_every_n_epoch=1)
+                               val_check_interval = 0.05)
         self.loss_fn = nn.CrossEntropyLoss()
         # self.targets_file = os.getcwd() + "/ious_nightowls.npy"
         # self.ious = {i: [] for i in [1, 2, 3]}
@@ -203,7 +204,7 @@ class Oracle(pl.LightningModule):
             "fp": 0,
             "fn": 0,
             "tn": 0
-        } for i in range(1, self.class_num + 1)}
+        } for i in range(0, self.class_num + 1)}
     
     def global_info_init_train(self):
         self.global_info_train = {i: {
@@ -211,7 +212,7 @@ class Oracle(pl.LightningModule):
             "fp": 0,
             "fn": 0,
             "tn": 0
-        } for i in range(1, self.class_num + 1)}
+        } for i in range(0, self.class_num + 1)}
 
     def global_info_init(self):
         self.global_info_init_val()
@@ -221,7 +222,7 @@ class Oracle(pl.LightningModule):
             "fp": 0,
             "fn": 0,
             "tn": 0
-        } for i in range(1, self.class_num + 1)}
+        } for i in range(0, self.class_num + 1)}
 
     def set_datasets(self, feature_data_path, label_root, split, batch_size,
                      class_num, box_score_thresh, skip_data_path=None):
@@ -248,23 +249,23 @@ class Oracle(pl.LightningModule):
         return self.test_loader
 
     def configure_optimizers(self):
-        optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=0.9, weight_decay=0.01)
+        optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=0.9, weight_decay=0.0005)
         # optimizer = optim.Adam(self.parameters(), lr=self.lr)
-        self.scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=1e-8, max_lr=self.lr, step_size_up=2000)
-        return {'optimizer': optimizer,'lr_scheduler': self.scheduler}
+        # self.scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=1e-8, max_lr=self.lr, step_size_up=2000)
+        return {'optimizer': optimizer} #,'lr_scheduler': self.scheduler}
 
-    def optimizer_step(self, epoch: int = None, batch_idx: int = None, optimizer = None,
-                       optimizer_idx: int = None, optimizer_closure = None, on_tpu: bool = None,
-                       using_native_amp: bool = None, using_lbfgs: bool = None):
+    # def optimizer_step(self, epoch: int = None, batch_idx: int = None, optimizer = None,
+    #                    optimizer_idx: int = None, optimizer_closure = None, on_tpu: bool = None,
+    #                    using_native_amp: bool = None, using_lbfgs: bool = None):
 
-        curLR = self.scheduler.get_last_lr()[0]
+    #     curLR = self.scheduler.get_last_lr()[0]
 
-        # self.logger.experiment.track(curLR, name='lr', context={'model':self.onTeacher, 'stage':self.stage})
+    #     # self.logger.experiment.track(curLR, name='lr', context={'model':self.onTeacher, 'stage':self.stage})
 
-        for pg in optimizer.param_groups:
-            pg['lr'] = curLR
-        optimizer.step(closure=optimizer_closure)
-        self.scheduler.step()
+    #     for pg in optimizer.param_groups:
+    #         pg['lr'] = curLR
+    #     optimizer.step(closure=optimizer_closure)
+    #     self.scheduler.step()
 
     def loss_function(self, y_pred, y_truth):
         return self.loss_fn(y_pred, y_truth)
@@ -280,7 +281,7 @@ class Oracle(pl.LightningModule):
             label = labels[i].item()
             output = torch.argmax(outputs[i]).item()
             cl = classes[i].item()
-            # cl = 1
+            cl = 1
             # self.ious[cl].append(label.cpu().detach().numpy())
             num_cls = 2
             if label >= num_cls / 2 and output >= num_cls / 2:
@@ -325,8 +326,8 @@ class Oracle(pl.LightningModule):
         for i in range(len(outputs)):
             label = labels[i].item()
             output = torch.argmax(outputs[i]).item()
-            # cl = 1
             cl = classes[i].item()
+            cl = 1
 
             # print(label, output, cl)
             num_cls = 2
@@ -396,7 +397,7 @@ class Oracle(pl.LightningModule):
 
     def f1_scores(self, dicts):
         fscores = []
-        for k in dicts.keys():
+        for k in [1]:#dicts.keys():
             dct = dicts[k]
             tp = dct['tp']
             fp = dct['fp']
@@ -408,7 +409,7 @@ class Oracle(pl.LightningModule):
         return fscores
 
 
-def inference(pred, model_path, iou_thresh=0.5, experiment_name=""):
+def inference(pred, model_path, iou_thresh=0.5, conv_thresholds=None, experiment_name=""):
     model = Oracle(experiment_name)
     model.cuda()
     model.load_from_path(model_path)
@@ -420,8 +421,11 @@ def inference(pred, model_path, iou_thresh=0.5, experiment_name=""):
         output = model(feature)
         keep_indices = []
         for j in range(output.shape[0]):
-            if torch.argmax(output[j]).item() != 0:
-                keep_indices.append(j)
+            if conv_thresholds is not None:
+                if output[j][1] >= conv_thresholds[label[j] - 1]:
+                    keep_indices.append(j)
+            elif torch.argmax(output[j]).item() != 0:
+                    keep_indices.append(j)
         kept_boxes.append(box[keep_indices])
         kept_scores.append(score[keep_indices])
         kept_labels.append(label[keep_indices])
