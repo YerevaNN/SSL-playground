@@ -1231,6 +1231,8 @@ class STAC(pl.LightningModule):
             self.logger.experiment.track(float(student_mAP3['mAP']), name='mAP5095', context={'model':False, 'stage':self.stage})
             for iou in ious:
                 ap = float(np.mean([x['ap'] for cat, x in student_mAP3[iou].items() if cat != 0]))
+                if self.hparams['class_num'] == 91:
+                    ap = ap*91/80
                 self.logger.experiment.track(
                     ap, name='AP{:.0f}'.format(iou*100),
                     context={'model':False, 'stage':self.stage})
@@ -1250,6 +1252,8 @@ class STAC(pl.LightningModule):
             
             for iou in ious:
                 ap = float(np.mean([x['ap'] for cat, x in teacher_mAP3[iou].items() if cat != 0]))
+                if self.hparams['class_num'] == 91:
+                    ap = ap*91/80
                 self.logger.experiment.track(
                     ap, name='AP{:.0f}'.format(iou*100),
                     context={'model':True, 'stage':self.stage})
