@@ -421,7 +421,7 @@ class STAC(pl.LightningModule):
             initialize='backbone',
             reuse_classifier=self.hparams['reuse_classifier'],
             class_num=self.hparams['class_num'],
-            gamma=self.hparams['gamma'],
+            gamma=0,
             box_score_thresh=self.hparams['box_score_thresh'])
         
         self.teacher.to('cuda')

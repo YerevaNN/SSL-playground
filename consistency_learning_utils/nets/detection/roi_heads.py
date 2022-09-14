@@ -11,6 +11,7 @@ from torchvision.ops import roi_align
 
 from . import _utils as det_utils
 
+
 def focal_loss(x, target, gamma):
     ce = F.cross_entropy(x, target)
     p_t = torch.exp(-ce)
@@ -35,7 +36,6 @@ def fastrcnn_loss(class_logits, box_regression, labels, regression_targets, gamm
     regression_targets = torch.cat(regression_targets, dim=0)
 
     classification_loss = focal_loss(class_logits, labels, gamma)
-
 
     # get indices that correspond to the regression targets for
     # the corresponding ground truth labels, to be used with
