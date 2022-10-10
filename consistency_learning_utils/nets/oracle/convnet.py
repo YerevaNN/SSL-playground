@@ -3,7 +3,7 @@ from pytorch_lightning.utilities.apply_func import from_numpy
 
 from torchvision.transforms import ToTensor, Compose
 import torch
-from torch import nn
+from torch import device, nn
 from torch.nn import MSELoss
 from torch.utils.data import Dataset, DataLoader
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -23,38 +23,48 @@ import pytorch_lightning as pl
 from pytorch_lightning import Trainer
 from aim.pytorch_lightning import AimLogger
 import os
-from .oracle import get_max_IOU
+from oracle import get_max_IOU
 from torch.nn import BatchNorm2d
 # from torchvision.ops import Conv2dNormActivation
+
+
+class ResBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
+    def forward(self, x):
+        conv_1 = nn.Conv2d(self.in_channels, self.out_channels, 3, padding=1, stride=1).cuda()
+        norm_layer_1 = BatchNorm2d(self.out_channels).cuda()
+        conv_2 = nn.Conv2d(self.out_channels, self.out_channels, 3, padding=1, stride=1).cuda()
+        norm_layer_2 = BatchNorm2d(self.out_channels).cuda()
+        x = F.relu(norm_layer_1(conv_1(x))).cuda()
+        x = F.relu(norm_layer_2(conv_2(x))).cuda()
+        return x
+
+
 
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(256, 128, 3, padding=1, stride=1) # 256x7x7 -> 128x7x7
-        self.norm_layer1 = BatchNorm2d(128)
-        self.conv2 = nn.Conv2d(128, 64, 3, padding=1, stride=1) # 64x7x7
-        self.norm_layer2 = BatchNorm2d(64)
-        self.conv3 = nn.Conv2d(64, 32, 3, padding=1, stride=1) # 32x7x7
-        self.norm_layer3 = BatchNorm2d(32)
-        self.conv4 = nn.Conv2d(32, 16, 3, padding=1, stride=1) # 16x7x7
-        self.norm_layer4 = BatchNorm2d(16)
-        self.conv5 = nn.Conv2d(16, 8, 3, padding=1, stride=1) # 8x7x7
-        self.norm_layer5 = BatchNorm2d(8)
-        self.conv6 = nn.Conv2d(8, 4, 3, padding=1, stride=1) # 4x7x7
-        self.norm_layer6 = BatchNorm2d(4)
-        self.conv7 = nn.Conv2d(4, 1, 3, padding=1, stride=1) # 1x7x7
-        # self.norm_layer7 = BatchNorm2d(2)
-        self.linear = nn.Linear(7 * 7, 2)
-        self.float()
+        self.block_1 = ResBlock(256, 128)
+        self.block_2 = ResBlock(128, 64)
+        self.block_3 = ResBlock(64, 32)
+        self.block_4 = ResBlock(32, 16)
+        self.block_5 = ResBlock(16, 8)
+        self.block_6 = ResBlock(8, 4)
+        self.avgpool = nn.AdaptiveAvgPool2d((7,7)).cuda()
+        self.linear = nn.Linear(7 * 7 * 4, 2).cuda()
 
     def forward(self, x):
-        x = F.relu(self.norm_layer1(self.conv1(x)))
-        x = F.relu(self.norm_layer2(self.conv2(x)))
-        x = F.relu(self.norm_layer3(self.conv3(x)))
-        x = F.relu(self.norm_layer4(self.conv4(x)))
-        x = F.relu(self.norm_layer5(self.conv5(x)))
-        x = F.relu(self.norm_layer6(self.conv6(x)))
-        x = self.conv7(x)
+        x = self.block_1(x)
+        x = self.block_2(x)
+        x = self.block_3(x)
+        x = self.block_4(x)
+        x = self.block_5(x)
+        x = self.block_6(x)
+        x = self.avgpool(x)
         x = torch.flatten(x, 1, -1)
         x = self.linear(x)
         x = torch.squeeze(x, 1)
@@ -172,6 +182,7 @@ class Oracle(pl.LightningModule):
         self.lr = lr
 
         self.model = Net()
+        self.model.cuda()
         self.mse = MSELoss()
         self.aim_logger = AimLogger(
             experiment=experiment_name
@@ -189,7 +200,7 @@ class Oracle(pl.LightningModule):
         # )
         self.trainer = Trainer(accelerator='ddp', gpus=-1, max_epochs=train_epochs,
                                logger=self.aim_logger,
-                               accumulate_grad_batches=8,
+                            #    accumulate_grad_batches=8,
                             #    callbacks = [checkpoint_callback],
                             #    gradient_clip_val=0.5,
                                check_val_every_n_epoch=1)
