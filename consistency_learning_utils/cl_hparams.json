@@ -31,8 +31,8 @@
     "thresholding_method": "convnet_and_constant",
     "box_score_thresh": 0.005,
     "EMA_keep_rate": 0.9996,
-    "batch_size": 4,
-    "gradac_batches": 8,
+    "batch_size": 6,
+    "gradac_batches": 5,
     "gradient_clip_threshold": 1,
     "gamma": 0,
 
@@ -47,7 +47,7 @@
     "oracle_model_path_init": "/home/hkhachatrian/SSL-playground/checkpoints/coco_2017_base_0_from_coco_0_convnet_on_coco_05_ema_0996/our_best.ckpt",
     "oracle_train_on_labeled": false,
 
-    "consistency_lambda": 4,
+    "consistency_lambda": 2,
     "consistency_criterion": "KL",
 
 

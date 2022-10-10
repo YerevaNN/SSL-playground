@@ -192,8 +192,8 @@ class Oracle(pl.LightningModule):
                                accumulate_grad_batches=8,
                             #    callbacks = [checkpoint_callback],
                             #    gradient_clip_val=0.5,
-                            #    check_val_every_n_epoch=1)
-                               val_check_interval = 0.05)
+                               check_val_every_n_epoch=1)
+                            #    val_check_interval = 0.05)
         self.loss_fn = nn.CrossEntropyLoss()
         # self.targets_file = os.getcwd() + "/ious_nightowls.npy"
         # self.ious = {i: [] for i in [1, 2, 3]}

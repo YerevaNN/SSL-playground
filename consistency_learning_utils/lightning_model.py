@@ -472,7 +472,7 @@ class STAC(pl.LightningModule):
                 # generating negatives
                 ratios = [0.33, 0.67, 1, 2, 3]
                 num_pixels = [i for i in range(1000, width * height, 1000)]
-                cnt = 50
+                cnt = 150
                 while cnt > 0:
                     ratio = random.choice(ratios)
                     num_pixel = random.choice(num_pixels)
@@ -506,13 +506,13 @@ class STAC(pl.LightningModule):
 
                 # generating positives
                 for gt in target_boxes:
-                    cnt = 50 // len(target_boxes)
+                    cnt = 100 // len(target_boxes)
                     while cnt > 0:
                         xmin = gt['bndbox']['xmin']
                         ymin = gt['bndbox']['ymin']
                         xmax = gt['bndbox']['xmax']
                         ymax = gt['bndbox']['ymax']
-                        gam = 0.2
+                        gam = 0.1
                         p_xmin = int(random.uniform(xmin - gam * width, xmin + gam * width))
                         p_ymin = int(random.uniform(ymin - gam * height, ymin + gam * height))
                         p_xmax = int(random.uniform(xmax - gam * width, xmax + gam * width))
@@ -530,10 +530,10 @@ class STAC(pl.LightningModule):
                 # generating using teacher
                 for i in range(len(teacher_boxes)):
                     teacher_max_iou = 0
-                    t_xmin = teacher_boxes[i][0].item()
-                    t_ymin = teacher_boxes[i][1].item()
-                    t_xmax = teacher_boxes[i][2].item()
-                    t_ymax = teacher_boxes[i][3].item()
+                    t_xmin = int(teacher_boxes[i][0].item())
+                    t_ymin = int(teacher_boxes[i][1].item())
+                    t_xmax = int(teacher_boxes[i][2].item())
+                    t_ymax = int(teacher_boxes[i][3].item())
                     t_label = teacher_labels[i].item()
                     t_score = teacher_scores[i].item()
                     for gt in target_boxes:
@@ -572,8 +572,8 @@ class STAC(pl.LightningModule):
         epochs_per_stage = [
             1,
             4,
-            3,
-            2,
+            50,
+            30,
             1,
             1,
             1,
@@ -588,7 +588,7 @@ class STAC(pl.LightningModule):
             checkpoint_path = self.hparams["oracle_model_path_init"]
             model.load_from_path(checkpoint_path)
 
-        split = 0.99
+        split = 0.9
         batch_size = 16
         model.set_datasets(feature_data_path, label_root, split, batch_size, class_num, box_score_thresh)
         model.fit_model()
